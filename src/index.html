@@ -128,7 +128,10 @@
                 <p class="eyebrow">VIDEO INBOX</p>
                 <h2>这组视频的素材概览</h2>
               </div>
-              <span class="video-overview-note">悬停卡片可静音预览，点开后设置入点与出点</span>
+              <div class="video-overview-actions">
+                <span class="video-overview-note">悬停卡片可静音预览，点开后设置入点与出点</span>
+                <button class="ghost-button compact" id="open-vlog-studio" type="button">打开 Vlog 粗剪台</button>
+              </div>
             </div>
             <div class="video-overview-content" id="video-overview-content"></div>
           </section>
@@ -423,6 +426,64 @@
           <dl class="file-details" id="file-details"></dl>
         </section>
       </aside>
+    </div>
+
+    <div class="vlog-overlay" id="vlog-overlay" hidden>
+      <section class="vlog-studio" role="dialog" aria-modal="true" aria-labelledby="vlog-studio-title">
+        <header class="vlog-studio-header">
+          <div>
+            <p class="eyebrow">VLOG ROUGH CUT</p>
+            <input class="vlog-title-input" id="vlog-title" aria-label="Vlog 名称" value="我的旅行 Vlog" />
+          </div>
+          <div class="vlog-header-actions">
+            <span id="vlog-total-duration">0 段 · 00:00</span>
+            <button class="round-button" id="close-vlog-studio" type="button" aria-label="关闭 Vlog 粗剪台">×</button>
+          </div>
+        </header>
+
+        <div class="vlog-studio-layout">
+          <aside class="vlog-candidate-panel">
+            <div class="vlog-panel-heading">
+              <div>
+                <h2 id="vlog-studio-title">候选片段</h2>
+                <p>来自你在视频工作台标记的片段</p>
+              </div>
+              <button class="ghost-button compact" id="sync-vlog-clips" type="button">同步全部</button>
+            </div>
+            <div class="vlog-candidate-list" id="vlog-candidate-list"></div>
+          </aside>
+
+          <main class="vlog-editor-panel">
+            <section class="vlog-preview-section">
+              <div class="vlog-preview-stage">
+                <video id="vlog-preview" controls playsinline preload="auto"></video>
+                <div class="vlog-preview-empty" id="vlog-preview-empty">把候选片段加入右侧时间线后，可在这里连续预览</div>
+              </div>
+              <div class="vlog-preview-controls">
+                <button class="primary-button compact" id="play-vlog-sequence" type="button">从头连续预览</button>
+                <button class="ghost-button compact" id="stop-vlog-sequence" type="button">停止预览</button>
+                <span id="vlog-preview-status">等待加入片段</span>
+              </div>
+            </section>
+
+            <section class="vlog-sequence-panel">
+              <div class="vlog-panel-heading">
+                <div>
+                  <h2>Vlog 时间线</h2>
+                  <p>调整顺序即是最终粗剪顺序</p>
+                </div>
+                <button class="ghost-button compact" id="clear-vlog-sequence" type="button">清空时间线</button>
+              </div>
+              <div class="vlog-sequence-list" id="vlog-sequence-list"></div>
+            </section>
+          </main>
+        </div>
+
+        <footer class="vlog-studio-footer">
+          <p>粗剪台只保存片段顺序与时间码，不修改原视频。导出的清单可作为后续一键成片或外部剪辑时的依据。</p>
+          <button class="primary-button" id="export-vlog-plan" type="button">导出粗剪清单</button>
+        </footer>
+      </section>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

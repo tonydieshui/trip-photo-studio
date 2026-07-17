@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('photoStudio', {
   revealProjectSource: (projectId) => ipcRenderer.invoke('project:reveal-source', projectId),
   revealAsset: (assetId) => ipcRenderer.invoke('asset:reveal', assetId),
   updateAsset: (input) => ipcRenderer.invoke('asset:update', input),
+  updateVlog: (input) => ipcRenderer.invoke('project:update-vlog', input),
+  exportVlog: (projectId) => ipcRenderer.invoke('project:export-vlog', projectId),
   restartAnalysis: (projectId) => ipcRenderer.invoke('analysis:restart', projectId),
   exportPicks: (projectId) => ipcRenderer.invoke('project:export-picks', projectId),
   onScanProgress: (callback) => subscribe('scan-progress', callback),

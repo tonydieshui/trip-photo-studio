@@ -35,6 +35,7 @@ const SMOKE_REVIEW = process.env.TRIP_PHOTO_SMOKE_REVIEW === '1';
 const SMOKE_REVIEW_FILE = process.env.TRIP_PHOTO_SMOKE_REVIEW_FILE || '';
 const SMOKE_COLOR_FILTER = process.env.TRIP_PHOTO_SMOKE_COLOR_FILTER || '';
 const SMOKE_WORKSPACE = process.env.TRIP_PHOTO_SMOKE_WORKSPACE || '';
+const SMOKE_VLOG = process.env.TRIP_PHOTO_SMOKE_VLOG === '1';
 const CUSTOM_USER_DATA = process.env.TRIP_PHOTO_USER_DATA || '';
 
 if (CUSTOM_USER_DATA) {
@@ -112,6 +113,27 @@ function normalizeVideoData(value = {}) {
   };
 }
 
+function normalizeVlogData(value = {}) {
+  const sequence = Array.isArray(value?.sequence)
+    ? value.sequence.map((entry, index) => {
+        const start = Math.max(0, Number(entry?.start ?? entry?.in ?? 0));
+        const end = Math.max(start, Number(entry?.end ?? entry?.out ?? 0));
+        if (!String(entry?.assetId || '') || !Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.05) return null;
+        return {
+          id: String(entry?.id || `sequence-${index}-${Math.round(start * 1000)}-${Math.round(end * 1000)}`),
+          assetId: String(entry.assetId),
+          clipId: String(entry?.clipId || ''),
+          start,
+          end
+        };
+      }).filter(Boolean)
+    : [];
+  return {
+    title: String(value?.title || '我的旅行 Vlog').trim().slice(0, 80) || '我的旅行 Vlog',
+    sequence
+  };
+}
+
 function normalizeLoadedState(value) {
   if (!value || typeof value !== 'object' || !Array.isArray(value.projects)) {
     return createEmptyState();
@@ -123,6 +145,7 @@ function normalizeLoadedState(value) {
     sourcePath: String(project.sourcePath || ''),
     createdAt: Number(project.createdAt || Date.now()),
     updatedAt: Number(project.updatedAt || Date.now()),
+    vlog: normalizeVlogData(project.vlog),
     assets: Array.isArray(project.assets)
       ? project.assets.map((asset) => {
           const assetPath = String(asset.path || '');
@@ -570,6 +593,7 @@ function registerIpcHandlers() {
       sourcePath,
       createdAt: now,
       updatedAt: now,
+      vlog: normalizeVlogData({ title: `${sanitizeFileName(input?.name || path.basename(sourcePath))} Vlog` }),
       assets
     };
 
@@ -640,6 +664,55 @@ function registerIpcHandlers() {
     project.updatedAt = Date.now();
     await queueStateSave();
     return asset;
+  });
+
+  ipcMain.handle('project:update-vlog', async (_event, input) => {
+    const project = getProject(input?.projectId);
+    if (!project) throw new Error('项目不存在');
+    project.vlog = normalizeVlogData(input?.vlog);
+    project.updatedAt = Date.now();
+    await queueStateSave();
+    return project.vlog;
+  });
+
+  ipcMain.handle('project:export-vlog', async (_event, projectId) => {
+    const project = getProject(projectId);
+    if (!project) throw new Error('项目不存在');
+    const vlog = normalizeVlogData(project.vlog);
+    if (!vlog.sequence.length) throw new Error('粗剪时间线还是空的，先加入候选片段');
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出 Vlog 粗剪清单',
+      defaultPath: path.join(app.getPath('documents'), `${sanitizeFileName(vlog.title)}-粗剪清单.json`),
+      filters: [{ name: 'Vlog 粗剪清单', extensions: ['json'] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+
+    const clips = vlog.sequence.map((entry, index) => {
+      const asset = project.assets.find((item) => item.id === entry.assetId);
+      if (!asset) throw new Error(`时间线中的第 ${index + 1} 段素材已不在项目中`);
+      return {
+        order: index + 1,
+        sequenceId: entry.id,
+        sourceFile: asset.name,
+        sourcePath: asset.path,
+        sourceDuration: Number(asset.video?.duration || 0),
+        in: entry.start,
+        out: entry.end,
+        duration: Math.max(0, entry.end - entry.start)
+      };
+    });
+    const manifest = {
+      format: 'trip-photo-studio-vlog-v1',
+      title: vlog.title,
+      projectName: project.name,
+      sourceDirectory: project.sourcePath,
+      generatedAt: new Date().toISOString(),
+      totalDuration: clips.reduce((total, clip) => total + clip.duration, 0),
+      clips
+    };
+    await fsp.writeFile(result.filePath, JSON.stringify(manifest, null, 2), 'utf8');
+    return { canceled: false, filePath: result.filePath, count: clips.length };
   });
 
   ipcMain.handle('analysis:restart', async (_event, projectId) => {
@@ -748,6 +821,7 @@ function createWindow() {
   }
   if (SMOKE_COLOR_FILTER) smokeQuery.smokeColorFilter = SMOKE_COLOR_FILTER;
   if (SMOKE_WORKSPACE) smokeQuery.smokeWorkspace = SMOKE_WORKSPACE;
+  if (SMOKE_VLOG) smokeQuery.smokeVlog = '1';
   mainWindow.loadFile(
     path.join(__dirname, 'index.html'),
     Object.keys(smokeQuery).length ? { query: smokeQuery } : undefined
@@ -786,6 +860,20 @@ app.whenReady().then(async () => {
   if (SMOKE_TEST && SMOKE_SOURCE) {
     const sourcePath = path.resolve(SMOKE_SOURCE);
     const { assets } = await scanMediaFolder(sourcePath);
+    const smokeVideo = SMOKE_VLOG ? assets.find((asset) => asset.kind === 'video') : null;
+    if (smokeVideo) {
+      smokeVideo.video = normalizeVideoData({
+        ...smokeVideo.video,
+        duration: 42,
+        width: 1080,
+        height: 1920,
+        clips: [
+          { id: 'smoke-clip-1', start: 3, end: 10 },
+          { id: 'smoke-clip-2', start: 17, end: 25 },
+          { id: 'smoke-clip-3', start: 31, end: 38 }
+        ]
+      });
+    }
     const now = Date.now();
     smokeProjectId = crypto.randomUUID();
     libraryState = {
@@ -797,6 +885,12 @@ app.whenReady().then(async () => {
         sourcePath,
         createdAt: now,
         updatedAt: now,
+        vlog: normalizeVlogData({
+          title: '界面验证 Vlog',
+          sequence: smokeVideo
+            ? [{ id: 'smoke-sequence-1', assetId: smokeVideo.id, clipId: 'smoke-clip-1', start: 3, end: 10 }]
+            : []
+        }),
         assets
       }]
     };

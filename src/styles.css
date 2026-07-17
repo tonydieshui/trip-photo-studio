@@ -2218,6 +2218,7 @@ body {
 }
 
 .video-overview-note { color: #917f9b; font-size: 9px; }
+.video-overview-actions { display: flex; align-items: center; gap: 10px; }
 
 .video-overview-content {
   display: grid;
@@ -2515,6 +2516,268 @@ body {
 .video-clip-list-item small { color: #9d8aa2; font-size: 8px; }
 .video-clip-empty { padding: 9px 0; color: #a293a9; font-size: 9px; text-align: center; }
 .video-clip-note { margin-top: 10px; color: #9c8fa4; }
+
+/* Vlog rough-cut studio */
+.vlog-overlay {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  padding: 28px;
+  place-items: center;
+  background: rgba(53, 35, 65, 0.26);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.vlog-studio {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(1220px, 100%);
+  height: min(810px, 100%);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 88% 6%, rgba(242, 201, 231, 0.55), transparent 27%),
+    radial-gradient(circle at 5% 95%, rgba(215, 202, 245, 0.48), transparent 30%),
+    rgba(250, 247, 252, 0.91);
+  box-shadow: 0 30px 90px rgba(65, 44, 82, 0.28), inset 0 1px rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(30px) saturate(1.14);
+}
+
+.vlog-studio-header,
+.vlog-studio-footer,
+.vlog-panel-heading,
+.vlog-preview-controls,
+.vlog-header-actions,
+.vlog-sequence-item,
+.vlog-sequence-actions {
+  display: flex;
+  align-items: center;
+}
+
+.vlog-studio-header {
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 84px;
+  padding: 17px 22px;
+  border-bottom: 1px solid rgba(105, 74, 130, 0.1);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.vlog-studio-header .eyebrow { margin: 0 0 5px; }
+.vlog-title-input {
+  width: min(470px, 58vw);
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #4c3859;
+  font-family: Georgia, "Microsoft YaHei UI", serif;
+  font-size: 21px;
+  font-weight: 500;
+}
+
+.vlog-title-input:focus { color: #73518b; }
+.vlog-header-actions { gap: 13px; color: #8c7b98; font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.vlog-studio-layout {
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.vlog-candidate-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  padding: 18px;
+  border-right: 1px solid rgba(105, 74, 130, 0.1);
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.vlog-editor-panel {
+  display: grid;
+  grid-template-rows: minmax(235px, 1fr) minmax(190px, 0.75fr);
+  min-height: 0;
+}
+
+.vlog-panel-heading {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 39px;
+}
+
+.vlog-panel-heading h2 { margin: 0; color: #574263; font-size: 13px; }
+.vlog-panel-heading p { margin: 4px 0 0; color: #9a8aa4; font-size: 9px; }
+
+.vlog-candidate-list,
+.vlog-sequence-list {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-height: 0;
+  margin-top: 12px;
+  overflow: auto;
+}
+
+.vlog-candidate-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  min-height: 49px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid rgba(103, 72, 128, 0.1);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.vlog-candidate-item.added { opacity: 0.64; }
+.vlog-candidate-item strong,
+.vlog-candidate-item span { display: block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vlog-candidate-item strong { color: #62506d; font-size: 9px; }
+.vlog-candidate-item span { margin-top: 5px; color: #a091aa; font-size: 8px; font-variant-numeric: tabular-nums; }
+
+.vlog-add-button {
+  flex: 0 0 auto;
+  min-height: 25px;
+  padding: 0 7px;
+  border: 1px solid rgba(151, 111, 190, 0.22);
+  border-radius: 7px;
+  background: linear-gradient(135deg, rgba(231, 214, 247, 0.82), rgba(250, 223, 239, 0.74));
+  color: #76558a;
+  font-family: inherit;
+  font-size: 8px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.vlog-add-button:disabled { cursor: default; opacity: 0.65; }
+
+.vlog-preview-section {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  padding: 16px 18px 12px;
+}
+
+.vlog-preview-stage {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgba(87, 57, 108, 0.12);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(128, 83, 149, 0.24), transparent 42%),
+    #100b16;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+#vlog-preview {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  background: #050407;
+}
+
+.vlog-preview-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  padding: 20px;
+  place-items: center;
+  color: rgba(250, 241, 255, 0.65);
+  font-size: 11px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.vlog-preview-controls {
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.vlog-preview-controls span { margin-left: 4px; color: #97889f; font-size: 9px; }
+
+.vlog-sequence-panel {
+  min-height: 0;
+  padding: 12px 18px 17px;
+  border-top: 1px solid rgba(105, 74, 130, 0.1);
+  background: rgba(255, 255, 255, 0.27);
+}
+
+.vlog-sequence-list {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.vlog-sequence-item {
+  min-width: 0;
+  min-height: 62px;
+  padding: 6px;
+  border: 1px solid rgba(105, 74, 130, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.53);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.8);
+}
+
+.vlog-sequence-item.active { border-color: rgba(182, 111, 183, 0.42); background: linear-gradient(135deg, rgba(231, 214, 247, 0.7), rgba(250, 223, 239, 0.62)); }
+.vlog-sequence-main { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-width: 0; padding: 3px; border: 0; background: transparent; color: inherit; font-family: inherit; text-align: left; cursor: pointer; }
+.vlog-sequence-index { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 6px; background: rgba(125, 91, 151, 0.11); color: #755489; font-size: 9px; font-weight: 650; }
+.vlog-sequence-main strong,
+.vlog-sequence-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vlog-sequence-main strong { color: #5d466b; font-size: 9px; }
+.vlog-sequence-main small { margin-top: 4px; color: #9a89a4; font-size: 8px; font-variant-numeric: tabular-nums; }
+.vlog-sequence-main em { padding: 3px 5px; border-radius: 5px; background: rgba(122, 95, 149, 0.08); color: #917a9c; font-size: 7px; font-style: normal; }
+.vlog-sequence-actions { align-self: stretch; flex-direction: column; gap: 2px; margin-left: 4px; }
+.vlog-sequence-actions button { display: grid; width: 18px; height: 15px; padding: 0; place-items: center; border: 0; border-radius: 4px; background: rgba(117, 82, 141, 0.08); color: #846a92; font-family: inherit; font-size: 9px; cursor: pointer; }
+.vlog-sequence-actions button:hover:not(:disabled) { background: rgba(191, 121, 181, 0.2); color: #6b4f7c; }
+.vlog-sequence-actions button:disabled { cursor: default; opacity: 0.35; }
+
+.vlog-empty-state {
+  display: grid;
+  min-height: 100px;
+  padding: 15px;
+  place-items: center;
+  border: 1px dashed rgba(114, 83, 139, 0.17);
+  border-radius: 11px;
+  color: #a092a8;
+  font-size: 9px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.timeline-empty { grid-column: 1 / -1; min-height: 88px; }
+
+.vlog-studio-footer {
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 63px;
+  padding: 12px 22px;
+  border-top: 1px solid rgba(105, 74, 130, 0.1);
+  background: rgba(255, 255, 255, 0.53);
+}
+
+.vlog-studio-footer p { max-width: 720px; margin: 0; color: #998aa2; font-size: 9px; line-height: 1.6; }
+
+@media (max-width: 900px) {
+  .video-overview-actions { align-items: flex-end; flex-direction: column; }
+  .vlog-overlay { padding: 12px; }
+  .vlog-studio { height: 100%; border-radius: 16px; }
+  .vlog-studio-layout { grid-template-columns: 245px minmax(0, 1fr); }
+  .vlog-title-input { width: 280px; }
+  .vlog-candidate-panel { padding: 12px; }
+  .vlog-preview-section { padding: 12px; }
+  .vlog-sequence-panel { padding: 10px 12px 12px; }
+  .vlog-studio-footer { padding: 10px 14px; }
+}
 
 @media (max-width: 1180px) {
   .app-shell { grid-template-columns: 228px minmax(0, 1fr); }

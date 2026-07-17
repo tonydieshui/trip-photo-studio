@@ -52,6 +52,7 @@ const els = {
   insightsContent: document.querySelector('#insights-content'),
   videoOverview: document.querySelector('#video-overview'),
   videoOverviewContent: document.querySelector('#video-overview-content'),
+  openVlogStudio: document.querySelector('#open-vlog-studio'),
   restartAnalysisButton: document.querySelector('#restart-analysis-button'),
   gallery: document.querySelector('#gallery'),
   resultCount: document.querySelector('#result-count'),
@@ -97,6 +98,19 @@ const els = {
   setVideoIn: document.querySelector('#set-video-in'),
   setVideoOut: document.querySelector('#set-video-out'),
   deleteVideoClip: document.querySelector('#delete-video-clip'),
+  vlogOverlay: document.querySelector('#vlog-overlay'),
+  vlogTitle: document.querySelector('#vlog-title'),
+  vlogTotalDuration: document.querySelector('#vlog-total-duration'),
+  vlogCandidateList: document.querySelector('#vlog-candidate-list'),
+  vlogSequenceList: document.querySelector('#vlog-sequence-list'),
+  vlogPreview: document.querySelector('#vlog-preview'),
+  vlogPreviewEmpty: document.querySelector('#vlog-preview-empty'),
+  vlogPreviewStatus: document.querySelector('#vlog-preview-status'),
+  syncVlogClips: document.querySelector('#sync-vlog-clips'),
+  playVlogSequence: document.querySelector('#play-vlog-sequence'),
+  stopVlogSequence: document.querySelector('#stop-vlog-sequence'),
+  clearVlogSequence: document.querySelector('#clear-vlog-sequence'),
+  exportVlogPlan: document.querySelector('#export-vlog-plan'),
   previousPhoto: document.querySelector('#previous-photo'),
   nextPhoto: document.querySelector('#next-photo'),
   zoomOut: document.querySelector('#zoom-out'),
@@ -120,6 +134,10 @@ let filteredAssets = [];
 let reviewAssetId = null;
 let loadedReviewAssetId = null;
 let selectedVideoClipId = null;
+let selectedVlogSequenceId = null;
+let vlogPreviewIndex = null;
+let vlogSequencePlaying = false;
+let vlogPreviewLoading = false;
 let selectedSource = null;
 let nameWasEdited = false;
 let loadObserver = null;
@@ -186,6 +204,38 @@ function hasVideoClips(asset) {
 
 function totalClipDuration(asset) {
   return videoClips(asset).reduce((total, clip) => total + Number(clip.end) - Number(clip.start), 0);
+}
+
+function getVlog(project = activeProject()) {
+  if (!project) return { title: '我的旅行 Vlog', sequence: [] };
+  if (!project.vlog || typeof project.vlog !== 'object') {
+    project.vlog = { title: `${project.name} Vlog`, sequence: [] };
+  }
+  if (!Array.isArray(project.vlog.sequence)) project.vlog.sequence = [];
+  if (!String(project.vlog.title || '').trim()) project.vlog.title = `${project.name} Vlog`;
+  return project.vlog;
+}
+
+function vlogCandidates(project = activeProject()) {
+  return assetsForWorkspace(project, 'video').flatMap((asset) => videoClips(asset).map((clip) => ({
+    asset,
+    clip,
+    key: `${asset.id}:${clip.id}`
+  })));
+}
+
+function vlogEntryDetails(project, entry) {
+  const asset = project?.assets?.find((item) => item.id === entry.assetId);
+  if (!asset) return null;
+  return {
+    entry,
+    asset,
+    duration: Math.max(0, Number(entry.end) - Number(entry.start))
+  };
+}
+
+function vlogTotalDuration(project = activeProject()) {
+  return getVlog(project).sequence.reduce((total, entry) => total + Math.max(0, Number(entry.end) - Number(entry.start)), 0);
 }
 
 function formatBytes(bytes) {
@@ -446,7 +496,8 @@ function videoInsights(project) {
   const portraitCount = videos.filter((asset) => videoOrientation(asset) === 'portrait').length;
   const markedCount = videos.reduce((total, asset) => total + videoClips(asset).length, 0);
   const metadataCount = videos.filter((asset) => Number(asset.video?.duration || 0) > 0).length;
-  return { total: videos.length, totalDuration, portraitCount, markedCount, metadataCount };
+  const sequenceCount = getVlog(project).sequence.length;
+  return { total: videos.length, totalDuration, portraitCount, markedCount, metadataCount, sequenceCount };
 }
 
 function renderInsights(project) {
@@ -494,10 +545,284 @@ function renderVideoOverview(project) {
       <em>适合短视频与朋友圈</em>
     </article>
     <article class="video-overview-stat accent">
-      <span>已标记片段</span><strong>${insights.markedCount}</strong>
-      <em>已设置入点或出点</em>
+      <span>Vlog 时间线</span><strong>${insights.sequenceCount}</strong>
+      <em>${insights.markedCount} 段候选片段可加入</em>
     </article>
   `;
+}
+
+function vlogEntryKey(entry) {
+  return `${entry.assetId}:${entry.clipId || `${Number(entry.start)}-${Number(entry.end)}`}`;
+}
+
+function cloneVlog(vlog) {
+  return {
+    title: String(vlog.title || '我的旅行 Vlog'),
+    sequence: (vlog.sequence || []).map((entry) => ({ ...entry }))
+  };
+}
+
+async function persistVlog(nextVlog) {
+  const project = activeProject();
+  if (!project) return;
+  const previous = cloneVlog(getVlog(project));
+  project.vlog = cloneVlog(nextVlog);
+  renderVideoOverview(project);
+  renderVlogStudio();
+  try {
+    project.vlog = await api.updateVlog({ projectId: project.id, vlog: project.vlog });
+    renderVideoOverview(project);
+    renderVlogStudio();
+  } catch (error) {
+    project.vlog = previous;
+    renderVideoOverview(project);
+    renderVlogStudio();
+    showToast(error.message || '无法保存 Vlog 粗剪时间线', 'error');
+  }
+}
+
+function openVlogStudio() {
+  const project = activeProject();
+  if (!project) return;
+  closeReview();
+  const vlog = getVlog(project);
+  selectedVlogSequenceId = vlog.sequence.some((entry) => entry.id === selectedVlogSequenceId)
+    ? selectedVlogSequenceId
+    : vlog.sequence[0]?.id || null;
+  els.vlogOverlay.hidden = false;
+  renderVlogStudio();
+}
+
+function closeVlogStudio() {
+  vlogSequencePlaying = false;
+  vlogPreviewLoading = false;
+  vlogPreviewIndex = null;
+  selectedVlogSequenceId = null;
+  els.vlogPreview.pause();
+  els.vlogPreview.removeAttribute('src');
+  els.vlogPreview.removeAttribute('data-asset-id');
+  els.vlogPreview.load();
+  els.vlogOverlay.hidden = true;
+}
+
+function renderVlogStudio() {
+  if (els.vlogOverlay.hidden) return;
+  const project = activeProject();
+  if (!project) return;
+  const vlog = getVlog(project);
+  const candidates = vlogCandidates(project);
+  const sequenceKeys = new Set(vlog.sequence.map(vlogEntryKey));
+  const validEntries = vlog.sequence
+    .map((entry, index) => ({ index, details: vlogEntryDetails(project, entry) }))
+    .filter((item) => item.details);
+  if (!vlog.sequence.some((entry) => entry.id === selectedVlogSequenceId)) {
+    selectedVlogSequenceId = vlog.sequence[0]?.id || null;
+  }
+
+  if (document.activeElement !== els.vlogTitle) els.vlogTitle.value = vlog.title;
+  els.vlogTotalDuration.textContent = `${vlog.sequence.length} 段 · ${formatDuration(vlogTotalDuration(project))}`;
+  els.vlogCandidateList.innerHTML = candidates.length
+    ? candidates.map(({ asset, clip, key }) => {
+        const added = sequenceKeys.has(key);
+        return `
+          <article class="vlog-candidate-item ${added ? 'added' : ''}">
+            <div>
+              <strong>${escapeHtml(asset.name)}</strong>
+              <span>${formatDuration(clip.start)} → ${formatDuration(clip.end)} · ${formatDuration(clip.end - clip.start)}</span>
+            </div>
+            <button class="vlog-add-button" data-vlog-add-asset="${asset.id}" data-vlog-add-clip="${escapeHtml(clip.id)}" type="button" ${added ? 'disabled' : ''}>${added ? '已加入' : '+ 加入'}</button>
+          </article>
+        `;
+      }).join('')
+    : '<div class="vlog-empty-state">还没有候选片段。先在视频播放页设入点和出点。</div>';
+
+  els.vlogSequenceList.innerHTML = validEntries.length
+    ? validEntries.map(({ index, details }) => {
+        const { entry, asset, duration } = details;
+        const selected = entry.id === selectedVlogSequenceId;
+        return `
+          <article class="vlog-sequence-item ${selected ? 'active' : ''}">
+            <button class="vlog-sequence-main" data-vlog-preview="${escapeHtml(entry.id)}" type="button">
+              <span class="vlog-sequence-index">${index + 1}</span>
+              <span><strong>${escapeHtml(asset.name)}</strong><small>${formatDuration(entry.start)} → ${formatDuration(entry.end)} · ${formatDuration(duration)}</small></span>
+              <em>${videoOrientation(asset) === 'portrait' ? '竖屏' : videoOrientation(asset) === 'landscape' ? '横屏' : '视频'}</em>
+            </button>
+            <div class="vlog-sequence-actions">
+              <button data-vlog-move="-1" data-vlog-sequence-id="${escapeHtml(entry.id)}" type="button" ${index === 0 ? 'disabled' : ''} title="上移">↑</button>
+              <button data-vlog-move="1" data-vlog-sequence-id="${escapeHtml(entry.id)}" type="button" ${index === vlog.sequence.length - 1 ? 'disabled' : ''} title="下移">↓</button>
+              <button data-vlog-remove="${escapeHtml(entry.id)}" type="button" title="移除">×</button>
+            </div>
+          </article>
+        `;
+      }).join('')
+    : '<div class="vlog-empty-state timeline-empty">从左侧把片段加入这里，再按你想要的故事顺序排列。</div>';
+
+  const previewDetails = vlogPreviewIndex == null ? null : vlogEntryDetails(project, vlog.sequence[vlogPreviewIndex]);
+  els.vlogPreviewEmpty.hidden = Boolean(previewDetails);
+  els.playVlogSequence.disabled = !validEntries.length;
+  els.stopVlogSequence.disabled = !vlogSequencePlaying;
+  els.clearVlogSequence.disabled = !vlog.sequence.length;
+  els.exportVlogPlan.disabled = !vlog.sequence.length;
+  if (!previewDetails) {
+    els.vlogPreviewStatus.textContent = validEntries.length ? '点击时间线片段预览，或从头连续播放' : '等待加入片段';
+  }
+}
+
+function addVlogClip(assetId, clipId) {
+  const project = activeProject();
+  const candidate = vlogCandidates(project).find((item) => item.asset.id === assetId && item.clip.id === clipId);
+  if (!project || !candidate) return;
+  const vlog = cloneVlog(getVlog(project));
+  const key = `${assetId}:${clipId}`;
+  if (vlog.sequence.some((entry) => vlogEntryKey(entry) === key)) {
+    showToast('这段片段已经在 Vlog 时间线中');
+    return;
+  }
+  const id = `sequence-${Date.now()}-${Math.round(candidate.clip.start * 1000)}-${Math.round(candidate.clip.end * 1000)}`;
+  vlog.sequence.push({ id, assetId, clipId, start: candidate.clip.start, end: candidate.clip.end });
+  selectedVlogSequenceId = id;
+  persistVlog(vlog);
+}
+
+function syncVlogClips() {
+  const project = activeProject();
+  if (!project) return;
+  const vlog = cloneVlog(getVlog(project));
+  const existing = new Set(vlog.sequence.map(vlogEntryKey));
+  const additions = vlogCandidates(project).filter((candidate) => !existing.has(candidate.key));
+  if (!additions.length) {
+    showToast('所有已标记片段都已经在粗剪时间线中');
+    return;
+  }
+  additions.forEach((candidate, index) => {
+    const id = `sequence-${Date.now()}-${index}-${Math.round(candidate.clip.start * 1000)}`;
+    vlog.sequence.push({
+      id,
+      assetId: candidate.asset.id,
+      clipId: candidate.clip.id,
+      start: candidate.clip.start,
+      end: candidate.clip.end
+    });
+    selectedVlogSequenceId = id;
+  });
+  persistVlog(vlog);
+  showToast(`已加入 ${additions.length} 段候选片段，可继续调整顺序`);
+}
+
+function moveVlogEntry(sequenceId, direction) {
+  const project = activeProject();
+  const vlog = cloneVlog(getVlog(project));
+  const index = vlog.sequence.findIndex((entry) => entry.id === sequenceId);
+  const target = index + Number(direction);
+  if (!project || index < 0 || target < 0 || target >= vlog.sequence.length) return;
+  [vlog.sequence[index], vlog.sequence[target]] = [vlog.sequence[target], vlog.sequence[index]];
+  selectedVlogSequenceId = sequenceId;
+  persistVlog(vlog);
+}
+
+function removeVlogEntry(sequenceId) {
+  const project = activeProject();
+  const vlog = cloneVlog(getVlog(project));
+  const index = vlog.sequence.findIndex((entry) => entry.id === sequenceId);
+  if (!project || index < 0) return;
+  vlog.sequence.splice(index, 1);
+  selectedVlogSequenceId = vlog.sequence[Math.min(index, vlog.sequence.length - 1)]?.id || null;
+  vlogPreviewIndex = null;
+  persistVlog(vlog);
+}
+
+function clearVlogSequence() {
+  const project = activeProject();
+  if (!project || !getVlog(project).sequence.length) return;
+  if (!window.confirm('清空 Vlog 时间线？原视频与候选片段标记不会受到影响。')) return;
+  selectedVlogSequenceId = null;
+  vlogPreviewIndex = null;
+  vlogSequencePlaying = false;
+  vlogPreviewLoading = false;
+  els.vlogPreview.pause();
+  persistVlog({ ...cloneVlog(getVlog(project)), sequence: [] });
+}
+
+function previewVlogEntry(sequenceId, autoplay = true) {
+  const project = activeProject();
+  const vlog = getVlog(project);
+  const index = vlog.sequence.findIndex((entry) => entry.id === sequenceId);
+  if (index >= 0) previewVlogAt(index, autoplay);
+}
+
+function previewVlogAt(index, autoplay = true) {
+  const project = activeProject();
+  const vlog = getVlog(project);
+  const entry = vlog.sequence[index];
+  const details = vlogEntryDetails(project, entry);
+  if (!details) {
+    vlogSequencePlaying = false;
+    return;
+  }
+  selectedVlogSequenceId = entry.id;
+  vlogPreviewIndex = index;
+  const prepareClip = () => {
+    vlogPreviewLoading = false;
+    const maxTime = Math.max(0, Number(els.vlogPreview.duration || 0) - 0.05);
+    els.vlogPreview.currentTime = Math.min(Math.max(0, Number(entry.start || 0)), maxTime);
+    els.vlogPreviewEmpty.hidden = true;
+    els.vlogPreviewStatus.textContent = `正在预览第 ${index + 1} 段 · ${formatDuration(entry.start)} → ${formatDuration(entry.end)}`;
+    if (autoplay) els.vlogPreview.play().catch(() => {
+      vlogSequencePlaying = false;
+      els.vlogPreviewStatus.textContent = '点击播放器的播放键继续预览';
+      renderVlogStudio();
+    });
+  };
+
+  if (els.vlogPreview.dataset.assetId === details.asset.id && els.vlogPreview.readyState >= 1) {
+    vlogPreviewLoading = false;
+    prepareClip();
+  } else {
+    els.vlogPreview.pause();
+    vlogPreviewLoading = true;
+    els.vlogPreview.dataset.assetId = details.asset.id;
+    els.vlogPreview.onloadedmetadata = prepareClip;
+    els.vlogPreview.onerror = () => {
+      vlogPreviewLoading = false;
+      vlogSequencePlaying = false;
+      els.vlogPreviewStatus.textContent = '这段视频无法在应用内预览，但时间线仍已保存';
+      showToast('当前视频格式无法连续预览', 'error');
+    };
+    els.vlogPreview.src = `travel-photo://original/${details.asset.id}`;
+    els.vlogPreview.load();
+  }
+  renderVlogStudio();
+}
+
+function playVlogSequence() {
+  const project = activeProject();
+  const sequence = getVlog(project).sequence;
+  if (!sequence.length) return;
+  vlogSequencePlaying = true;
+  previewVlogAt(0, true);
+}
+
+function stopVlogSequence() {
+  vlogSequencePlaying = false;
+  els.vlogPreview.pause();
+  els.vlogPreviewStatus.textContent = '已停止连续预览';
+  renderVlogStudio();
+}
+
+async function exportVlogPlan() {
+  const project = activeProject();
+  if (!project) return;
+  els.exportVlogPlan.disabled = true;
+  els.exportVlogPlan.textContent = '选择保存位置…';
+  try {
+    const result = await api.exportVlog(project.id);
+    if (!result.canceled) showToast(`已导出 ${result.count} 段粗剪清单：${result.filePath}`, 'normal', 7000);
+  } catch (error) {
+    showToast(error.message || '导出粗剪清单失败', 'error');
+  } finally {
+    els.exportVlogPlan.textContent = '导出粗剪清单';
+    renderVlogStudio();
+  }
 }
 
 function renderSummary(project) {
@@ -1351,6 +1676,61 @@ document.querySelector('#open-source').addEventListener('click', () => {
 });
 document.querySelector('#rescan-button').addEventListener('click', rescanProject);
 document.querySelector('#export-button').addEventListener('click', exportPicks);
+els.openVlogStudio.addEventListener('click', openVlogStudio);
+document.querySelector('#close-vlog-studio').addEventListener('click', closeVlogStudio);
+els.syncVlogClips.addEventListener('click', syncVlogClips);
+els.playVlogSequence.addEventListener('click', playVlogSequence);
+els.stopVlogSequence.addEventListener('click', stopVlogSequence);
+els.clearVlogSequence.addEventListener('click', clearVlogSequence);
+els.exportVlogPlan.addEventListener('click', exportVlogPlan);
+els.vlogTitle.addEventListener('change', () => {
+  const project = activeProject();
+  if (!project) return;
+  const title = els.vlogTitle.value.trim() || `${project.name} Vlog`;
+  if (title !== getVlog(project).title) persistVlog({ ...cloneVlog(getVlog(project)), title });
+});
+els.vlogCandidateList.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-vlog-add-asset][data-vlog-add-clip]');
+  if (button) addVlogClip(button.dataset.vlogAddAsset, button.dataset.vlogAddClip);
+});
+els.vlogSequenceList.addEventListener('click', (event) => {
+  const preview = event.target.closest('[data-vlog-preview]');
+  if (preview) {
+    vlogSequencePlaying = false;
+    previewVlogEntry(preview.dataset.vlogPreview, true);
+    return;
+  }
+  const move = event.target.closest('[data-vlog-move][data-vlog-sequence-id]');
+  if (move) {
+    moveVlogEntry(move.dataset.vlogSequenceId, Number(move.dataset.vlogMove));
+    return;
+  }
+  const remove = event.target.closest('[data-vlog-remove]');
+  if (remove) removeVlogEntry(remove.dataset.vlogRemove);
+});
+els.vlogPreview.addEventListener('timeupdate', () => {
+  if (!vlogSequencePlaying || vlogPreviewLoading || vlogPreviewIndex == null) return;
+  const project = activeProject();
+  const entry = getVlog(project).sequence[vlogPreviewIndex];
+  if (!entry || els.vlogPreview.currentTime < Number(entry.end) - 0.06) return;
+  const nextIndex = vlogPreviewIndex + 1;
+  if (nextIndex < getVlog(project).sequence.length) {
+    previewVlogAt(nextIndex, true);
+  } else {
+    vlogSequencePlaying = false;
+    els.vlogPreview.pause();
+    els.vlogPreviewStatus.textContent = '连续预览完成';
+    renderVlogStudio();
+  }
+});
+els.vlogPreview.addEventListener('ended', () => {
+  if (vlogSequencePlaying) {
+    const project = activeProject();
+    const nextIndex = Number(vlogPreviewIndex || 0) + 1;
+    if (nextIndex < getVlog(project).sequence.length) previewVlogAt(nextIndex, true);
+    else stopVlogSequence();
+  }
+});
 
 els.restartAnalysisButton.addEventListener('click', async () => {
   const project = activeProject();
@@ -1489,6 +1869,10 @@ els.ratingRow.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (!els.vlogOverlay.hidden) {
+    if (event.key === 'Escape') closeVlogStudio();
+    return;
+  }
   const tagName = document.activeElement?.tagName;
   const typing = tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
   if (!els.importModal.hidden || typing) {
@@ -1553,6 +1937,7 @@ async function boot() {
       const firstAsset = project?.assets?.find((asset) => asset.name === preferredName) || project?.assets?.[0];
       if (firstAsset) openReview(firstAsset.id);
     }
+    if (smokeParams.get('smokeVlog') === '1') openVlogStudio();
   } catch (error) {
     showToast(error.message || '无法读取本地素材库', 'error', 6000);
   }
