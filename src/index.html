@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>旅图整理台</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">旅</div>
+          <div>
+            <strong>旅图整理台</strong>
+            <span>把回忆轻松挑出来</span>
+          </div>
+        </div>
+
+        <button class="primary-button import-trigger" id="import-trigger" type="button">
+          <span>＋</span> 导入本地文件夹
+        </button>
+
+        <div class="sidebar-section-heading">
+          <span>旅行项目</span>
+          <span id="project-count">0</span>
+        </div>
+        <nav class="project-list" id="project-list" aria-label="旅行项目"></nav>
+
+        <div class="sidebar-safety">
+          <span class="safety-icon">✓</span>
+          <div>
+            <strong>原片安全模式</strong>
+            <p>这里只记录筛选结果，不移动、不修改、不删除原始照片。</p>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section class="welcome-view" id="welcome-view">
+          <div class="welcome-art" aria-hidden="true">
+            <div class="postcard postcard-back"></div>
+            <div class="postcard postcard-front">
+              <span class="postcard-sun"></span>
+              <span class="postcard-mountain mountain-one"></span>
+              <span class="postcard-mountain mountain-two"></span>
+            </div>
+          </div>
+          <p class="eyebrow">LOCAL-FIRST PHOTO CULLING</p>
+          <h1>旅行结束了，整理不该才刚开始。</h1>
+          <p class="welcome-copy">
+            选择电脑里的任意照片文件夹，快速完成浏览、筛选和精选导出。所有分析都在本机进行。
+          </p>
+          <button class="primary-button large" id="welcome-import" type="button">选择照片文件夹</button>
+          <div class="welcome-features">
+            <span>递归扫描子文件夹</span>
+            <span>后台生成缩略图</span>
+            <span>筛选状态自动保存</span>
+          </div>
+        </section>
+
+        <section class="project-view" id="project-view" hidden>
+          <header class="topbar">
+            <div class="project-heading">
+              <div class="eyebrow">当前旅行项目</div>
+              <div class="title-row">
+                <h1 id="project-title">项目名称</h1>
+                <span class="analysis-status" id="analysis-status">准备分析</span>
+              </div>
+              <button class="path-button" id="open-source" type="button" title="在资源管理器中打开">
+                <span id="project-path"></span>
+              </button>
+            </div>
+            <div class="topbar-actions">
+              <button class="ghost-button" id="rescan-button" type="button">重新扫描</button>
+              <button class="ghost-button danger-ghost" id="remove-project-button" type="button">移除项目</button>
+              <button class="primary-button" id="export-button" type="button">导出保留照片</button>
+            </div>
+          </header>
+
+          <section class="summary-strip" aria-label="筛选统计">
+            <button class="summary-card active" data-summary-filter="all" type="button">
+              <span>全部素材</span>
+              <strong id="count-total">0</strong>
+            </button>
+            <button class="summary-card" data-summary-filter="unreviewed" type="button">
+              <span>未筛选</span>
+              <strong id="count-unreviewed">0</strong>
+            </button>
+            <button class="summary-card pick" data-summary-filter="pick" type="button">
+              <span>保留</span>
+              <strong id="count-pick">0</strong>
+            </button>
+            <button class="summary-card maybe" data-summary-filter="maybe" type="button">
+              <span>待定</span>
+              <strong id="count-maybe">0</strong>
+            </button>
+            <button class="summary-card issue" data-summary-filter="issues" type="button">
+              <span>质量提示</span>
+              <strong id="count-issues">0</strong>
+            </button>
+          </section>
+
+          <section class="project-insights" aria-label="项目照片理解">
+            <div class="insights-heading">
+              <div>
+                <p class="eyebrow">LOCAL VISUAL UNDERSTANDING</p>
+                <h2>这组照片的视觉画像</h2>
+              </div>
+              <button class="ghost-button compact" id="restart-analysis-button" type="button">重新深入分析</button>
+            </div>
+            <div class="insights-content" id="insights-content"></div>
+          </section>
+
+          <section class="controls-bar">
+            <div class="status-filters" id="status-filters">
+              <button class="filter-chip active" data-filter="all" type="button">全部</button>
+              <button class="filter-chip" data-filter="unreviewed" type="button">未筛选</button>
+              <button class="filter-chip" data-filter="pick" type="button">保留</button>
+              <button class="filter-chip" data-filter="maybe" type="button">待定</button>
+              <button class="filter-chip" data-filter="reject" type="button">淘汰</button>
+              <button class="filter-chip" data-filter="issues" type="button">有提示</button>
+            </div>
+            <div class="view-controls">
+              <select id="feature-filter" aria-label="视觉特征筛选">
+                <option value="all">视觉特征：全部</option>
+                <option value="portrait">竖幅构图</option>
+                <option value="landscape">横幅构图</option>
+                <option value="warm">暖色调</option>
+                <option value="cool">冷色调</option>
+                <option value="low-saturation">低饱和</option>
+                <option value="vivid">鲜明色彩</option>
+                <option value="dark">暗调氛围</option>
+                <option value="bright">明亮通透</option>
+                <option value="minimal">极简画面</option>
+                <option value="high-score">技术分 85+</option>
+              </select>
+              <label class="search-box">
+                <span>⌕</span>
+                <input id="search-input" type="search" placeholder="搜索文件、路径或风格" />
+              </label>
+              <select id="sort-select" aria-label="照片排序">
+                <option value="newest">文件时间：新到旧</option>
+                <option value="oldest">文件时间：旧到新</option>
+                <option value="name">文件名</option>
+                <option value="rating">星级优先</option>
+                <option value="score">质量分优先</option>
+              </select>
+              <label class="size-control" title="调整缩略图大小">
+                <span>▦</span>
+                <input id="grid-size" type="range" min="170" max="320" value="230" />
+              </label>
+            </div>
+          </section>
+
+          <details class="color-lab" id="color-lab" open>
+            <summary>
+              <span class="color-lab-mark" aria-hidden="true">◒</span>
+              <span class="color-lab-title">
+                <strong>颜色实验室</strong>
+                <small>按主色、配色关系和氛围色系发现照片</small>
+              </span>
+              <span class="color-filter-active" id="color-filter-label">全部颜色</span>
+              <span class="color-lab-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="color-filter-content" id="color-filter-options">
+              <section class="color-filter-group color-family-group">
+                <div class="color-filter-heading">
+                  <strong>主色家族</strong>
+                  <span>照片色板中较明显的颜色</span>
+                </div>
+                <div class="color-filter-chips">
+                  <button class="color-chip active" data-color-filter="all" type="button">
+                    <i class="color-swatch spectrum"></i><span>全部</span><small>0</small>
+                  </button>
+                  <button class="color-chip" data-color-filter="family-red" type="button">
+                    <i class="color-swatch" style="--swatch:#e97b89"></i><span>红</span><small>0</small>
+                  </button>
+                  <button class="color-chip" data-color-filter="family-orange" type="button">
+                    <i class="color-swatch" style="--swatch:#e9a06f"></i><span>橙</span><small>0</small>
+                  </button>
+                  <button class="color-chip" data-color-filter="family-yellow" type="button">
+                    <i class="color-swatch" style="--swatch:#e6c86e"></i><span>黄</span><small>0</small>
+                  </button>
+                  <button class="color-chip" data-color-filter="family-green" type="button">
+                    <i class="color-swatch" style="--swatch:#83b99b"></i><span>绿</span><small>0</small>
+                  </button>
+                  <button class="color-chip" data-color-filter="family-cyan" type="button">
+                    <i class="color-swatch" style="--swatch:#72bbc1"></i><span>青</span><small>0</small>
+                  </button>
+                  <button class="color-chip" data-color-filter="family-blue" type="button">
+                    <i class="color-swatch" style="--swatch:#7798d5"></i><span>蓝</span><small>0</small>
+                  </button>
+                  <button class="color-chip" data-color-filter="family-purple" type="button">
+                    <i class="color-swatch" style="--swatch:#a381c9"></i><span>紫</span><small>0</small>
+                  </button>
+                  <button class="color-chip" data-color-filter="family-pink" type="button">
+                    <i class="color-swatch" style="--swatch:#df8eb5"></i><span>粉</span><small>0</small>
+                  </button>
+                  <button class="color-chip" data-color-filter="family-neutral" type="button">
+                    <i class="color-swatch neutral"></i><span>中性</span><small>0</small>
+                  </button>
+                </div>
+              </section>
+
+              <section class="color-filter-group">
+                <div class="color-filter-heading">
+                  <strong>配色关系</strong>
+                  <span>依据色相环上的角度关系</span>
+                </div>
+                <div class="color-filter-chips">
+                  <button class="color-chip expressive" data-color-filter="harmony-complementary" type="button">
+                    <i class="color-swatch complementary"></i><span>互补色</span><small>0</small>
+                  </button>
+                  <button class="color-chip expressive" data-color-filter="harmony-analogous" type="button">
+                    <i class="color-swatch analogous"></i><span>邻近色</span><small>0</small>
+                  </button>
+                  <button class="color-chip expressive" data-color-filter="harmony-monochrome" type="button">
+                    <i class="color-swatch monochrome"></i><span>单色系</span><small>0</small>
+                  </button>
+                  <button class="color-chip expressive" data-color-filter="harmony-multicolor" type="button">
+                    <i class="color-swatch multicolor"></i><span>多彩</span><small>0</small>
+                  </button>
+                </div>
+              </section>
+
+              <section class="color-filter-group mood-group">
+                <div class="color-filter-heading">
+                  <strong>氛围色系</strong>
+                  <span>用饱和度、明度和主色组合识别</span>
+                </div>
+                <div class="color-filter-chips">
+                  <button class="color-chip expressive" data-color-filter="preset-morandi" type="button"><span>莫兰迪</span><small>0</small></button>
+                  <button class="color-chip expressive" data-color-filter="preset-pastel" type="button"><span>柔和粉彩</span><small>0</small></button>
+                  <button class="color-chip expressive" data-color-filter="preset-earthy" type="button"><span>大地色</span><small>0</small></button>
+                  <button class="color-chip expressive" data-color-filter="preset-vivid" type="button"><span>高饱和</span><small>0</small></button>
+                  <button class="color-chip expressive" data-color-filter="preset-black-white" type="button"><span>黑白灰</span><small>0</small></button>
+                  <button class="color-chip expressive" data-color-filter="preset-teal-orange" type="button"><span>青橙电影感</span><small>0</small></button>
+                  <button class="color-chip expressive" data-color-filter="preset-sunset" type="button"><span>日落色</span><small>0</small></button>
+                  <button class="color-chip expressive" data-color-filter="preset-forest" type="button"><span>森系</span><small>0</small></button>
+                  <button class="color-chip expressive" data-color-filter="preset-cool-clean" type="button"><span>清冷色</span><small>0</small></button>
+                  <button class="color-chip expressive" data-color-filter="preset-golden" type="button"><span>金色暖调</span><small>0</small></button>
+                </div>
+              </section>
+            </div>
+            <p class="color-lab-note">本地按缩略图色板近似判断；它适合帮你发现素材，不会改变照片，也不会替代你的审美决定。</p>
+          </details>
+
+          <div class="gallery-meta">
+            <span id="result-count">显示 0 张</span>
+            <span class="shortcut-hint">点开照片后可用 P / U / X 快速筛选</span>
+          </div>
+
+          <section class="gallery" id="gallery" aria-live="polite"></section>
+          <div class="load-sentinel" id="load-sentinel"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="import-modal" hidden>
+      <section class="dialog-card import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title">
+        <button class="dialog-close" data-close-import type="button" aria-label="关闭">×</button>
+        <p class="eyebrow">新建旅行项目</p>
+        <h2 id="import-title">从本地文件夹开始</h2>
+        <p class="dialog-copy">应用会扫描所选文件夹及全部子文件夹。照片仍保留在原处。</p>
+
+        <button class="folder-picker" id="choose-folder-button" type="button">
+          <span class="folder-icon">⌑</span>
+          <span>
+            <strong id="folder-picker-title">选择照片素材文件夹</strong>
+            <small id="folder-picker-path">支持包含多个相机子文件夹</small>
+          </span>
+          <span class="folder-arrow">›</span>
+        </button>
+
+        <label class="field-label" for="project-name-input">项目名称</label>
+        <input class="text-field" id="project-name-input" type="text" maxlength="80" placeholder="例如：2026 北海道夏天" />
+
+        <div class="safe-note">
+          <strong>原片不会被复制或改动</strong>
+          <span>当前版本使用“引用导入”，只在本地保存缩略图与筛选记录。</span>
+        </div>
+
+        <div class="dialog-actions">
+          <button class="ghost-button" data-close-import type="button">取消</button>
+          <button class="primary-button" id="create-project-button" type="button" disabled>开始导入</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="review-overlay" id="review-overlay" hidden>
+      <div class="review-stage">
+        <header class="review-header">
+          <button class="round-button" id="close-review" type="button" aria-label="退出大图">×</button>
+          <div class="review-counter" id="review-counter">1 / 1</div>
+          <div class="zoom-controls" aria-label="图片缩放">
+            <button class="zoom-button" id="zoom-out" type="button" title="缩小">−</button>
+            <input id="zoom-slider" type="range" min="10" max="500" step="5" value="100" aria-label="缩放百分比" />
+            <span id="zoom-level">100%</span>
+            <button class="zoom-button" id="zoom-in" type="button" title="放大">＋</button>
+            <button class="fit-button" id="zoom-fit" type="button">显示完整</button>
+          </div>
+          <div class="review-header-actions">
+            <button class="ghost-button" id="reveal-asset" type="button">打开文件位置</button>
+          </div>
+        </header>
+        <div class="review-image-wrap" id="review-image-wrap">
+          <button class="nav-button previous" id="previous-photo" type="button" aria-label="上一张">‹</button>
+          <img id="review-image" alt="照片大图预览" />
+          <button class="nav-button next" id="next-photo" type="button" aria-label="下一张">›</button>
+        </div>
+      </div>
+
+      <aside class="review-panel">
+        <div class="review-file-heading">
+          <p class="eyebrow">正在筛选</p>
+          <h2 id="review-file-name"></h2>
+          <p id="review-file-meta"></p>
+        </div>
+
+        <section class="review-section">
+          <h3>筛选决定</h3>
+          <div class="decision-grid">
+            <button class="decision-button pick" data-review-status="pick" type="button">
+              <kbd>P</kbd><span><strong>保留</strong><small>进入精选导出</small></span>
+            </button>
+            <button class="decision-button maybe" data-review-status="maybe" type="button">
+              <kbd>U</kbd><span><strong>待定</strong><small>稍后再判断</small></span>
+            </button>
+            <button class="decision-button reject" data-review-status="reject" type="button">
+              <kbd>X</kbd><span><strong>淘汰</strong><small>仅标记，不删原片</small></span>
+            </button>
+          </div>
+        </section>
+
+        <section class="review-section">
+          <div class="section-title-row">
+            <h3>个人星级</h3>
+            <span>快捷键 0～5</span>
+          </div>
+          <div class="rating-row" id="rating-row"></div>
+        </section>
+
+        <section class="review-section understanding-section">
+          <div class="section-title-row">
+            <h3>本地视觉理解</h3>
+            <span>不上传照片</span>
+          </div>
+          <p class="photo-summary" id="photo-summary">等待分析这张照片…</p>
+          <div class="style-tags" id="style-tags"></div>
+          <div class="palette-block">
+            <span>主色板</span>
+            <div class="palette-strip" id="palette-strip"></div>
+            <p class="color-story" id="color-story"></p>
+          </div>
+          <div class="analysis-metrics" id="analysis-metrics"></div>
+        </section>
+
+        <section class="review-section quality-section">
+          <div class="section-title-row">
+            <h3>本地质量提示</h3>
+            <span id="quality-score"></span>
+          </div>
+          <div class="quality-flags" id="quality-flags"></div>
+          <p class="quality-note">技术分只反映曝光、层次和细节，不评价故事性与个人审美。</p>
+        </section>
+
+        <section class="review-section file-section">
+          <h3>文件信息</h3>
+          <dl class="file-details" id="file-details"></dl>
+        </section>
+      </aside>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

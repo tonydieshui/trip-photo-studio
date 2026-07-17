@@ -1,0 +1,22 @@
+{
+  "name": "trip-photo-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "旅图整理台：本地优先的旅行照片导入、筛选与精选导出工具",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check src/core.js && node --check src/main.js && node --check src/preload.js && node --check src/renderer.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "photo",
+    "travel",
+    "electron",
+    "culling"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^43.1.0"
+  }
+}
