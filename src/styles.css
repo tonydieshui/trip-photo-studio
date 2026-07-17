@@ -2371,22 +2371,109 @@ body {
 .review-overlay.video-review .video-review-only { display: block; }
 
 .review-overlay.video-review .review-image-wrap {
-  padding: 28px 65px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 14px 65px 12px;
   background:
     radial-gradient(circle at 50% 50%, rgba(113, 80, 137, 0.15), transparent 48%),
     #0d0a12;
 }
 
 #review-video {
+  grid-row: 1;
   display: block;
+  width: auto;
+  height: auto;
   max-width: 100%;
   max-height: 100%;
-  min-width: min(480px, 100%);
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   background: #050407;
   box-shadow: 0 22px 40px rgba(0, 0, 0, 0.35);
 }
+
+.review-overlay.video-review .video-marker-dock {
+  display: grid !important;
+  grid-row: 2;
+  width: min(760px, 100%);
+  gap: 7px;
+  padding: 8px 10px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 11px;
+  background: rgba(18, 12, 25, 0.74);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.23);
+  backdrop-filter: blur(14px);
+}
+
+.video-marker-toolbar,
+.video-marker-actions,
+.video-timeline-labels {
+  display: flex;
+  align-items: center;
+}
+
+.video-marker-toolbar { justify-content: space-between; gap: 10px; }
+.video-marker-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.video-playhead { color: rgba(250, 239, 255, 0.86); font-size: 9px; font-variant-numeric: tabular-nums; }
+
+.marker-button {
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #f8effa;
+  font-family: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.marker-button:hover:not(:disabled) { border-color: rgba(245, 198, 234, 0.64); background: rgba(224, 151, 207, 0.22); }
+.marker-button.in { border-color: rgba(164, 132, 226, 0.52); }
+.marker-button.out { border-color: rgba(239, 162, 208, 0.52); }
+.marker-button.delete { color: #ffd9e9; }
+.marker-button:disabled { cursor: not-allowed; opacity: 0.4; }
+
+.video-clip-timeline {
+  position: relative;
+  height: 17px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 10%);
+  cursor: crosshair;
+}
+
+.video-timeline-clip,
+.video-timeline-playhead,
+.video-timeline-draft {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+}
+
+.video-timeline-clip {
+  z-index: 1;
+  min-width: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #9776cf, #e7a3c8);
+  box-shadow: 0 0 10px rgba(225, 133, 195, 0.36);
+  cursor: pointer;
+}
+
+.video-timeline-clip.active { outline: 1px solid rgba(255, 255, 255, 0.92); outline-offset: -1px; }
+.video-timeline-playhead { z-index: 3; width: 2px; margin-left: -1px; background: #fff6fc; box-shadow: 0 0 6px rgba(255, 255, 255, 0.95); pointer-events: none; }
+.video-timeline-draft { z-index: 2; width: 2px; margin-left: -1px; background: #ffd56d; box-shadow: 0 0 6px rgba(255, 213, 109, 0.82); pointer-events: none; }
+.video-timeline-loading { display: grid; height: 100%; place-items: center; color: rgba(255, 255, 255, 0.56); font-size: 8px; }
+.video-timeline-labels { justify-content: space-between; color: rgba(255, 255, 255, 0.5); font-size: 8px; font-variant-numeric: tabular-nums; }
 
 .video-clip-copy,
 .video-clip-note {
@@ -2396,39 +2483,37 @@ body {
   line-height: 1.6;
 }
 
-.clip-range-visual {
-  position: relative;
-  height: 9px;
-  margin: 12px 0 8px;
-  overflow: hidden;
-  border: 1px solid rgba(104, 73, 129, 0.12);
-  border-radius: 999px;
-  background: rgba(112, 80, 138, 0.09);
+.video-clip-list {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  margin-top: 11px;
+  overflow: auto;
 }
 
-.clip-range-visual i {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  display: block;
-  min-width: 2px;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #9f80d8, #e7a5c9);
-  box-shadow: 0 0 12px rgba(180, 111, 206, 0.28);
-}
-
-.clip-time-row,
-.clip-actions {
-  display: flex;
+.video-clip-list-item {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 7px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid rgba(104, 73, 129, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.46);
+  color: #6e5c79;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.clip-time-row { color: var(--faint); font-size: 8px; }
-.clip-time-row strong { margin-left: 3px; color: #715a80; font-size: 9px; }
-.clip-actions { justify-content: flex-start; margin-top: 12px; }
-.clip-actions .compact { min-height: 27px; padding: 0 8px; font-size: 9px; }
+.video-clip-list-item:hover,
+.video-clip-list-item.active { border-color: rgba(177, 112, 184, 0.36); background: linear-gradient(135deg, rgba(231, 214, 247, 0.68), rgba(250, 223, 239, 0.64)); }
+.video-clip-list-item span { color: #9b849f; font-size: 8px; }
+.video-clip-list-item strong { overflow: hidden; color: #5f466d; font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.video-clip-list-item small { color: #9d8aa2; font-size: 8px; }
+.video-clip-empty { padding: 9px 0; color: #a293a9; font-size: 9px; text-align: center; }
 .video-clip-note { margin-top: 10px; color: #9c8fa4; }
 
 @media (max-width: 1180px) {
@@ -2451,6 +2536,9 @@ body {
   .summary-strip { grid-template-columns: repeat(3, 1fr); }
   .shortcut-hint { display: none; }
   .review-overlay { grid-template-columns: minmax(0, 1fr) 290px; }
+  .review-overlay.video-review .review-image-wrap { padding-right: 36px; padding-left: 36px; }
+  .video-marker-toolbar { align-items: flex-start; flex-direction: column; }
+  .video-marker-actions { justify-content: flex-start; }
   .insights-content { grid-template-columns: repeat(2, 1fr); }
   .color-filter-content { grid-template-columns: 1fr; }
   .mood-group { grid-column: auto; }

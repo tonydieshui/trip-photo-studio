@@ -90,12 +90,13 @@ const els = {
   fileDetails: document.querySelector('#file-details'),
   videoDurationLabel: document.querySelector('#video-duration-label'),
   videoClipCopy: document.querySelector('#video-clip-copy'),
-  videoTrimStart: document.querySelector('#video-trim-start'),
-  videoTrimEnd: document.querySelector('#video-trim-end'),
-  clipRangeVisual: document.querySelector('#clip-range-visual'),
+  videoPlayhead: document.querySelector('#video-playhead'),
+  videoClipTimeline: document.querySelector('#video-clip-timeline'),
+  videoTimelineEnd: document.querySelector('#video-timeline-end'),
+  videoClipList: document.querySelector('#video-clip-list'),
   setVideoIn: document.querySelector('#set-video-in'),
   setVideoOut: document.querySelector('#set-video-out'),
-  clearVideoTrim: document.querySelector('#clear-video-trim'),
+  deleteVideoClip: document.querySelector('#delete-video-clip'),
   previousPhoto: document.querySelector('#previous-photo'),
   nextPhoto: document.querySelector('#next-photo'),
   zoomOut: document.querySelector('#zoom-out'),
@@ -118,6 +119,7 @@ let visibleLimit = 160;
 let filteredAssets = [];
 let reviewAssetId = null;
 let loadedReviewAssetId = null;
+let selectedVideoClipId = null;
 let selectedSource = null;
 let nameWasEdited = false;
 let loadObserver = null;
@@ -170,6 +172,20 @@ function videoOrientation(asset) {
   const video = asset?.video || {};
   if (!video.width || !video.height) return 'unknown';
   return video.width < video.height ? 'portrait' : 'landscape';
+}
+
+function videoClips(asset) {
+  return (asset?.video?.clips || [])
+    .filter((clip) => Number.isFinite(Number(clip?.start)) && Number.isFinite(Number(clip?.end)) && Number(clip.end) > Number(clip.start))
+    .sort((left, right) => Number(left.start) - Number(right.start) || Number(left.end) - Number(right.end));
+}
+
+function hasVideoClips(asset) {
+  return videoClips(asset).length > 0;
+}
+
+function totalClipDuration(asset) {
+  return videoClips(asset).reduce((total, clip) => total + Number(clip.end) - Number(clip.start), 0);
 }
 
 function formatBytes(bytes) {
@@ -233,7 +249,7 @@ function matchesVideoFeature(asset, filter) {
   if (filter === 'short') return duration > 0 && duration <= 15;
   if (filter === 'medium') return duration > 15 && duration <= 60;
   if (filter === 'long') return duration > 60;
-  if (filter === 'trimmed') return Number(video.trimStart || 0) > 0 || video.trimEnd != null;
+  if (filter === 'trimmed') return hasVideoClips(asset);
   return true;
 }
 
@@ -250,7 +266,7 @@ function projectSummary(project, workspace = null) {
   for (const asset of assets) {
     summary[STATUS[asset.status] ? asset.status : 'unreviewed'] += 1;
     if (workspace === 'video') {
-      if (Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null) summary.issues += 1;
+      if (hasVideoClips(asset)) summary.issues += 1;
     } else if (asset.analysis?.flags?.length) {
       summary.issues += 1;
     }
@@ -323,7 +339,7 @@ function calculateFilteredAssets(project) {
   const list = assetsForWorkspace(project).filter((asset) => {
     const statusMatch = activeFilter === 'all'
       || (activeFilter === 'issues' && (isVideoWorkspace()
-        ? Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null
+        ? hasVideoClips(asset)
         : asset.analysis?.flags?.length))
       || asset.status === activeFilter;
     if (!statusMatch) return false;
@@ -359,9 +375,7 @@ function calculateFilteredAssets(project) {
 function renderAnalysisStatus(project) {
   if (isVideoWorkspace()) {
     const videos = assetsForWorkspace(project, 'video');
-    const marked = videos.filter((asset) => (
-      Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null
-    )).length;
+    const marked = videos.reduce((total, asset) => total + videoClips(asset).length, 0);
     els.analysisStatus.textContent = marked ? `已标记 ${marked} 段片段` : `${videos.length} 段视频素材`;
     els.analysisStatus.classList.remove('running');
     return;
@@ -430,9 +444,7 @@ function videoInsights(project) {
   const videos = assetsForWorkspace(project, 'video');
   const totalDuration = videos.reduce((sum, asset) => sum + Number(asset.video?.duration || 0), 0);
   const portraitCount = videos.filter((asset) => videoOrientation(asset) === 'portrait').length;
-  const markedCount = videos.filter((asset) => (
-    Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null
-  )).length;
+  const markedCount = videos.reduce((total, asset) => total + videoClips(asset).length, 0);
   const metadataCount = videos.filter((asset) => Number(asset.video?.duration || 0) > 0).length;
   return { total: videos.length, totalDuration, portraitCount, markedCount, metadataCount };
 }
@@ -565,12 +577,12 @@ function videoCardMarkup(asset) {
   const rating = asset.rating > 0 ? '★'.repeat(asset.rating) : '';
   const duration = Number(asset.video?.duration || 0);
   const orientation = videoOrientation(asset);
-  const isTrimmed = Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null;
+  const isTrimmed = hasVideoClips(asset);
   return `
     <article class="photo-card video-card ${orientation === 'portrait' ? 'video-portrait' : ''} status-${asset.status}" data-asset-id="${asset.id}">
       <button class="photo-open-button" data-open-asset="${asset.id}" type="button" aria-label="查看视频 ${escapeHtml(asset.name)}">
         <div class="photo-media video-media">
-          <video class="video-card-preview" data-video-preview="${asset.id}" muted loop playsinline preload="metadata" src="travel-photo://original/${asset.id}"></video>
+          <video class="video-card-preview" data-video-preview="${asset.id}" data-preview-src="travel-photo://original/${asset.id}" muted loop playsinline preload="none"></video>
           <div class="video-poster-fallback"><span>▶</span></div>
           <div class="card-top-badges">
             <span class="format-badge">${escapeHtml(asset.ext.replace('.', '').toUpperCase())}</span>
@@ -630,10 +642,15 @@ function wireVideoPreviews() {
     video.addEventListener('loadedmetadata', () => persistVideoMetadata(assetId, video), { once: true });
     video.addEventListener('error', () => card?.classList.add('video-preview-error'), { once: true });
     card?.addEventListener('mouseenter', () => {
+      if (!video.getAttribute('src')) {
+        video.src = video.dataset.previewSrc;
+        video.load();
+      }
       video.play().catch(() => undefined);
     });
     card?.addEventListener('mouseleave', () => {
       video.pause();
+      video.currentTime = 0;
     });
   });
 }
@@ -801,6 +818,7 @@ function openReview(assetId) {
 function closeReview() {
   reviewAssetId = null;
   loadedReviewAssetId = null;
+  selectedVideoClipId = null;
   els.reviewOverlay.hidden = true;
   els.reviewOverlay.classList.remove('video-review');
   els.reviewImage.removeAttribute('src');
@@ -899,13 +917,23 @@ function renderReview() {
     els.reviewImageWrap.classList.remove('can-pan', 'panning');
     if (loadedReviewAssetId !== asset.id) {
       loadedReviewAssetId = asset.id;
+      selectedVideoClipId = videoClips(asset)[0]?.id || null;
       els.reviewVideo.onloadedmetadata = () => {
         persistVideoMetadata(asset.id, els.reviewVideo);
         const currentAsset = activeProject()?.assets.find((item) => item.id === asset.id);
-        if (currentAsset?.video?.trimStart > 0) {
-          els.reviewVideo.currentTime = Math.min(currentAsset.video.trimStart, Math.max(0, els.reviewVideo.duration - 0.1));
+        const firstClip = videoClips(currentAsset || asset)[0];
+        if (firstClip?.start > 0) {
+          els.reviewVideo.currentTime = Math.min(firstClip.start, Math.max(0, els.reviewVideo.duration - 0.1));
         }
         if (reviewAssetId === asset.id) renderVideoReview(currentAsset || asset);
+      };
+      els.reviewVideo.ontimeupdate = () => {
+        const currentAsset = activeProject()?.assets.find((item) => item.id === asset.id);
+        if (reviewAssetId === asset.id && currentAsset) updateVideoPlayhead(currentAsset);
+      };
+      els.reviewVideo.onseeked = () => {
+        const currentAsset = activeProject()?.assets.find((item) => item.id === asset.id);
+        if (reviewAssetId === asset.id && currentAsset) updateVideoPlayhead(currentAsset);
       };
       els.reviewVideo.onerror = () => showToast('当前视频格式无法在应用内预览，但仍可标记和导出原文件', 'error', 6000);
       els.reviewVideo.src = `travel-photo://original/${asset.id}`;
@@ -998,22 +1026,36 @@ function renderReviewControls(asset) {
 function renderVideoReview(asset) {
   const video = asset.video || {};
   const duration = Number(video.duration || els.reviewVideo.duration || 0);
-  const trimStart = Math.max(0, Number(video.trimStart || 0));
-  const trimEnd = video.trimEnd == null ? duration : Math.max(trimStart, Number(video.trimEnd));
-  const hasRange = duration > 0;
-  const selectedDuration = hasRange ? Math.max(0, trimEnd - trimStart) : 0;
+  const clips = videoClips(asset);
+  const draftStart = Number.isFinite(Number(video.draftStart)) ? Number(video.draftStart) : null;
+  if (!clips.some((clip) => clip.id === selectedVideoClipId)) {
+    selectedVideoClipId = clips[0]?.id || null;
+  }
+  const selectedClip = clips.find((clip) => clip.id === selectedVideoClipId) || null;
+  const selectedDuration = totalClipDuration(asset);
   els.reviewFileMeta.textContent = `${asset.ext.replace('.', '').toUpperCase()} · ${formatBytes(asset.size)}${duration ? ` · ${formatDuration(duration)}` : ''}`;
-  els.videoDurationLabel.textContent = duration ? `原片 ${formatDuration(duration)}` : '正在读取时长';
-  els.videoTrimStart.textContent = formatDuration(trimStart);
-  els.videoTrimEnd.textContent = video.trimEnd == null ? '片尾' : formatDuration(trimEnd);
-  els.videoClipCopy.textContent = hasRange
-    ? (video.trimEnd != null || trimStart > 0
-        ? `当前标记会保留 ${formatDuration(selectedDuration)} 的候选片段。`
-        : '播放到合适位置后，将当前时间设为入点或出点。')
-    : '视频时长读取后，即可标记适合放进 Vlog 的片段。';
-  const left = hasRange ? Math.min(100, (trimStart / duration) * 100) : 0;
-  const width = hasRange ? Math.max(0, Math.min(100 - left, ((trimEnd - trimStart) / duration) * 100)) : 0;
-  els.clipRangeVisual.innerHTML = `<i style="left:${left}%;width:${width}%"></i>`;
+  els.videoDurationLabel.textContent = duration
+    ? `原片 ${formatDuration(duration)} · ${clips.length} 段`
+    : '正在读取时长';
+  els.videoClipCopy.textContent = !duration
+    ? '视频时长读取后，即可标记适合放进 Vlog 的多个片段。'
+    : draftStart != null
+      ? `入点已设在 ${formatDuration(draftStart)}；继续播放后点击“设为出点并添加”。`
+      : clips.length
+        ? `已保存 ${clips.length} 段候选片段，共 ${formatDuration(selectedDuration)}。点击下方片段可定位并选择。`
+        : '播放到想保留的开始位置，点击“设为入点”；结束位置点击“设为出点并添加”。';
+  els.videoClipList.innerHTML = clips.length
+    ? clips.map((clip, index) => `
+        <button class="video-clip-list-item ${clip.id === selectedVideoClipId ? 'active' : ''}" data-select-video-clip="${escapeHtml(clip.id)}" type="button">
+          <span>片段 ${index + 1}</span>
+          <strong>${formatDuration(clip.start)} → ${formatDuration(clip.end)}</strong>
+          <small>${formatDuration(clip.end - clip.start)} · 点击定位</small>
+        </button>
+      `).join('')
+    : '<div class="video-clip-empty">尚未添加候选片段</div>';
+  els.setVideoOut.disabled = draftStart == null;
+  els.deleteVideoClip.disabled = !selectedClip;
+  renderVideoTimeline(asset);
   const orientation = videoOrientation(asset);
   els.fileDetails.innerHTML = `
     <dt>修改时间</dt><dd>${formatDate(asset.modifiedAt)}</dd>
@@ -1021,9 +1063,39 @@ function renderVideoReview(asset) {
     <dt>视频时长</dt><dd>${duration ? formatDuration(duration) : '正在读取'}</dd>
     <dt>画面尺寸</dt><dd>${video.width && video.height ? `${video.width} × ${video.height}` : '正在读取'}</dd>
     <dt>画幅方向</dt><dd>${orientation === 'portrait' ? '竖屏' : orientation === 'landscape' ? '横屏' : '正在读取'}</dd>
-    <dt>片段范围</dt><dd>${hasRange ? `${formatDuration(trimStart)} ～ ${video.trimEnd == null ? '片尾' : formatDuration(trimEnd)}` : '尚未标记'}</dd>
+    <dt>候选片段</dt><dd>${clips.length ? `${clips.length} 段 · 共 ${formatDuration(selectedDuration)}` : '尚未标记'}</dd>
     <dt>原始位置</dt><dd>${escapeHtml(asset.path)}</dd>
   `;
+}
+
+function renderVideoTimeline(asset) {
+  const duration = Number(asset.video?.duration || els.reviewVideo.duration || 0);
+  const clips = videoClips(asset);
+  const draftStart = Number.isFinite(Number(asset.video?.draftStart)) ? Number(asset.video.draftStart) : null;
+  els.videoTimelineEnd.textContent = duration ? formatDuration(duration) : '读取中';
+  if (!duration) {
+    els.videoClipTimeline.innerHTML = '<span class="video-timeline-loading">读取视频时间轴…</span>';
+    els.videoPlayhead.textContent = '当前位置 00:00';
+    return;
+  }
+  els.videoClipTimeline.innerHTML = `
+    <i class="video-timeline-playhead" style="left:${Math.min(100, Math.max(0, (Number(els.reviewVideo.currentTime || 0) / duration) * 100))}%"></i>
+    ${draftStart != null ? `<i class="video-timeline-draft" style="left:${Math.min(100, Math.max(0, (draftStart / duration) * 100))}%"></i>` : ''}
+    ${clips.map((clip, index) => {
+      const left = Math.min(100, Math.max(0, (Number(clip.start) / duration) * 100));
+      const width = Math.max(0.7, Math.min(100 - left, ((Number(clip.end) - Number(clip.start)) / duration) * 100));
+      return `<button class="video-timeline-clip ${clip.id === selectedVideoClipId ? 'active' : ''}" data-select-video-clip="${escapeHtml(clip.id)}" style="left:${left}%;width:${width}%" type="button" title="片段 ${index + 1}：${formatDuration(clip.start)} → ${formatDuration(clip.end)}"></button>`;
+    }).join('')}
+  `;
+  updateVideoPlayhead(asset);
+}
+
+function updateVideoPlayhead(asset) {
+  const duration = Number(asset.video?.duration || els.reviewVideo.duration || 0);
+  const current = Number(els.reviewVideo.currentTime || 0);
+  els.videoPlayhead.textContent = `当前位置 ${formatDuration(current)}`;
+  const indicator = els.videoClipTimeline.querySelector('.video-timeline-playhead');
+  if (indicator && duration) indicator.style.left = `${Math.min(100, Math.max(0, (current / duration) * 100))}%`;
 }
 
 function navigateReview(direction) {
@@ -1152,16 +1224,48 @@ function setVideoMarker(marker) {
     return;
   }
   const currentTime = Math.max(0, Math.min(duration, els.reviewVideo.currentTime));
-  const next = { ...(asset.video || {}), duration };
+  const next = { ...(asset.video || {}), duration, clips: videoClips(asset).map((clip) => ({ ...clip })) };
   if (marker === 'in') {
-    next.trimStart = Math.min(currentTime, Math.max(0, Number(next.trimEnd ?? duration) - 0.1));
+    next.draftStart = currentTime;
+    selectedVideoClipId = null;
+    showToast(`已设入点 ${formatDuration(currentTime)}，继续播放后设出点即可添加片段`);
   } else if (marker === 'out') {
-    next.trimEnd = Math.max(currentTime, Math.min(duration, Number(next.trimStart || 0) + 0.1));
-  } else {
-    next.trimStart = 0;
-    next.trimEnd = null;
+    const draftStart = Number(next.draftStart);
+    if (!Number.isFinite(draftStart)) {
+      showToast('请先设置入点，再设置出点', 'error');
+      return;
+    }
+    if (currentTime - draftStart < 0.1) {
+      showToast('出点需要在入点之后', 'error');
+      return;
+    }
+    const id = `clip-${Date.now()}-${Math.round(currentTime * 1000)}`;
+    next.clips.push({ id, start: draftStart, end: currentTime });
+    next.clips.sort((left, right) => left.start - right.start || left.end - right.end);
+    next.draftStart = null;
+    selectedVideoClipId = id;
+    showToast(`已添加片段 ${formatDuration(draftStart)} → ${formatDuration(currentTime)}`);
+  } else if (marker === 'delete') {
+    if (!selectedVideoClipId) {
+      showToast('先点击时间轴或片段列表，选择要删除的片段', 'error');
+      return;
+    }
+    const index = next.clips.findIndex((clip) => clip.id === selectedVideoClipId);
+    if (index < 0) return;
+    next.clips.splice(index, 1);
+    selectedVideoClipId = next.clips[Math.min(index, next.clips.length - 1)]?.id || null;
+    showToast('已删除所选片段');
   }
   updateAsset(asset.id, { video: next });
+}
+
+function selectVideoClip(clipId) {
+  const asset = activeProject()?.assets.find((item) => item.id === reviewAssetId);
+  const clip = videoClips(asset).find((item) => item.id === clipId);
+  if (!asset || !clip) return;
+  selectedVideoClipId = clip.id;
+  els.reviewVideo.currentTime = clip.start;
+  renderVideoReview(asset);
 }
 
 document.querySelector('#import-trigger').addEventListener('click', openImportDialog);
@@ -1299,7 +1403,24 @@ document.querySelector('#reveal-asset').addEventListener('click', () => {
 });
 els.setVideoIn.addEventListener('click', () => setVideoMarker('in'));
 els.setVideoOut.addEventListener('click', () => setVideoMarker('out'));
-els.clearVideoTrim.addEventListener('click', () => setVideoMarker('clear'));
+els.deleteVideoClip.addEventListener('click', () => setVideoMarker('delete'));
+els.videoClipTimeline.addEventListener('click', (event) => {
+  const clip = event.target.closest('[data-select-video-clip]');
+  if (clip) {
+    selectVideoClip(clip.dataset.selectVideoClip);
+    return;
+  }
+  const asset = activeProject()?.assets.find((item) => item.id === reviewAssetId);
+  const duration = Number(asset?.video?.duration || els.reviewVideo.duration || 0);
+  if (!duration) return;
+  const bounds = els.videoClipTimeline.getBoundingClientRect();
+  const position = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+  els.reviewVideo.currentTime = duration * position;
+});
+els.videoClipList.addEventListener('click', (event) => {
+  const clip = event.target.closest('[data-select-video-clip]');
+  if (clip) selectVideoClip(clip.dataset.selectVideoClip);
+});
 
 els.zoomOut.addEventListener('click', () => setReviewZoom(reviewZoom / 1.25));
 els.zoomIn.addEventListener('click', () => setReviewZoom(reviewZoom * 1.25));

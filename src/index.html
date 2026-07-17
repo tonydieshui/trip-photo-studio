@@ -337,7 +337,19 @@
         <div class="review-image-wrap" id="review-image-wrap">
           <button class="nav-button previous" id="previous-photo" type="button" aria-label="上一张">‹</button>
           <img id="review-image" alt="照片大图预览" />
-          <video id="review-video" controls playsinline preload="metadata" hidden></video>
+          <video id="review-video" controls playsinline preload="auto" hidden></video>
+          <div class="video-marker-dock video-review-only" id="video-marker-dock">
+            <div class="video-marker-toolbar">
+              <span class="video-playhead" id="video-playhead">当前位置 00:00</span>
+              <div class="video-marker-actions">
+                <button class="marker-button in" id="set-video-in" type="button">设为入点</button>
+                <button class="marker-button out" id="set-video-out" type="button">设为出点并添加</button>
+                <button class="marker-button delete" id="delete-video-clip" type="button">删除所选</button>
+              </div>
+            </div>
+            <div class="video-clip-timeline" id="video-clip-timeline" aria-label="视频片段时间轴"></div>
+            <div class="video-timeline-labels"><span>00:00</span><span id="video-timeline-end">读取中</span></div>
+          </div>
           <button class="nav-button next" id="next-photo" type="button" aria-label="下一张">›</button>
         </div>
       </div>
@@ -401,18 +413,9 @@
             <h3>Vlog 片段标记</h3>
             <span id="video-duration-label">等待读取</span>
           </div>
-          <p class="video-clip-copy" id="video-clip-copy">播放到合适位置后，将当前时间设为入点或出点。</p>
-          <div class="clip-range-visual" id="clip-range-visual"><i></i></div>
-          <div class="clip-time-row">
-            <span>入点 <strong id="video-trim-start">00:00</strong></span>
-            <span>出点 <strong id="video-trim-end">片尾</strong></span>
-          </div>
-          <div class="clip-actions">
-            <button class="ghost-button compact" id="set-video-in" type="button">设为入点</button>
-            <button class="ghost-button compact" id="set-video-out" type="button">设为出点</button>
-            <button class="ghost-button compact" id="clear-video-trim" type="button">清除标记</button>
-          </div>
-          <p class="video-clip-note">当前版本保存片段范围并导出清单；原视频仍以完整文件安全复制。</p>
+          <p class="video-clip-copy" id="video-clip-copy">在播放区设置入点，再设置出点，即可加入多个 Vlog 候选片段。</p>
+          <div class="video-clip-list" id="video-clip-list"></div>
+          <p class="video-clip-note">这些标记会写入导出的“视频片段清单.json”，用于后续在剪辑软件中快速定位；原视频不会被裁切或修改。</p>
         </section>
 
         <section class="review-section file-section">

@@ -77,17 +77,38 @@ function createEmptyState() {
 
 function normalizeVideoData(value = {}) {
   const duration = Math.max(0, Number(value?.duration || 0));
-  const trimStart = Math.max(0, Math.min(duration || Number.MAX_SAFE_INTEGER, Number(value?.trimStart || 0)));
-  const rawTrimEnd = value?.trimEnd == null ? null : Number(value.trimEnd);
-  const trimEnd = Number.isFinite(rawTrimEnd) && rawTrimEnd > trimStart
-    ? Math.min(duration || rawTrimEnd, rawTrimEnd)
+  const maximum = duration || Number.MAX_SAFE_INTEGER;
+  const normalizeClip = (clip, index) => {
+    const start = Math.max(0, Math.min(maximum, Number(clip?.start ?? clip?.in ?? 0)));
+    const end = Math.max(start, Math.min(maximum, Number(clip?.end ?? clip?.out ?? 0)));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.05) return null;
+    return {
+      id: String(clip?.id || `clip-${index}-${Math.round(start * 1000)}-${Math.round(end * 1000)}`),
+      start,
+      end
+    };
+  };
+  let sourceClips = Array.isArray(value?.clips) ? value.clips : [];
+  if (!sourceClips.length && duration) {
+    const legacyStart = Math.max(0, Math.min(duration, Number(value?.trimStart || 0)));
+    const rawLegacyEnd = value?.trimEnd == null ? duration : Number(value.trimEnd);
+    const legacyEnd = Math.max(legacyStart, Math.min(duration, rawLegacyEnd));
+    if (legacyStart > 0 || value?.trimEnd != null) sourceClips = [{ id: 'legacy-clip', start: legacyStart, end: legacyEnd }];
+  }
+  const clips = sourceClips
+    .map(normalizeClip)
+    .filter(Boolean)
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+  const draftStartValue = value?.draftStart == null ? null : Number(value.draftStart);
+  const draftStart = Number.isFinite(draftStartValue) && draftStartValue >= 0 && draftStartValue < maximum
+    ? Math.min(maximum, draftStartValue)
     : null;
   return {
     duration,
     width: Math.max(0, Math.round(Number(value?.width || 0))),
     height: Math.max(0, Math.round(Number(value?.height || 0))),
-    trimStart,
-    trimEnd
+    clips,
+    draftStart
   };
 }
 
@@ -411,7 +432,7 @@ async function streamAssetFile(asset, request) {
   const commonHeaders = {
     'Accept-Ranges': 'bytes',
     'Content-Type': mimeTypeFor(asset.path),
-    'Cache-Control': 'private, max-age=0'
+    'Cache-Control': 'private, max-age=3600'
   };
 
   if (rangeHeader) {
@@ -426,7 +447,7 @@ async function streamAssetFile(asset, request) {
     }
     start = Math.max(0, Math.min(total - 1, start));
     end = Math.max(start, Math.min(total - 1, end));
-    const stream = fs.createReadStream(asset.path, { start, end });
+    const stream = fs.createReadStream(asset.path, { start, end, highWaterMark: 1024 * 1024 });
     return new Response(Readable.toWeb(stream), {
       status: 206,
       headers: {
@@ -437,7 +458,7 @@ async function streamAssetFile(asset, request) {
     });
   }
 
-  const stream = fs.createReadStream(asset.path);
+  const stream = fs.createReadStream(asset.path, { highWaterMark: 1024 * 1024 });
   return new Response(Readable.toWeb(stream), {
     headers: { ...commonHeaders, 'Content-Length': String(total) }
   });
@@ -686,8 +707,11 @@ function registerIpcHandlers() {
         file: asset.name,
         sourcePath: asset.path,
         duration: Number(asset.video?.duration || 0),
-        in: Number(asset.video?.trimStart || 0),
-        out: asset.video?.trimEnd == null ? null : Number(asset.video.trimEnd)
+        clips: (asset.video?.clips || []).map((clip) => ({
+          id: String(clip.id),
+          in: Number(clip.start || 0),
+          out: Number(clip.end || 0)
+        }))
       }));
       await fsp.writeFile(
         path.join(outputDirectory, '视频片段清单.json'),
