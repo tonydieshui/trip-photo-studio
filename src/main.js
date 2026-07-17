@@ -12,11 +12,14 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const { Readable } = require('node:stream');
 
 const {
   canDirectPreview,
-  isPhotoFile,
+  isMediaFile,
+  isVideoFile,
   makeAssetId,
+  mediaKind,
   normalizeStatus,
   sanitizeFileName
 } = require('./core');
@@ -31,6 +34,7 @@ const SMOKE_SOURCE = process.env.TRIP_PHOTO_SMOKE_SOURCE || '';
 const SMOKE_REVIEW = process.env.TRIP_PHOTO_SMOKE_REVIEW === '1';
 const SMOKE_REVIEW_FILE = process.env.TRIP_PHOTO_SMOKE_REVIEW_FILE || '';
 const SMOKE_COLOR_FILTER = process.env.TRIP_PHOTO_SMOKE_COLOR_FILTER || '';
+const SMOKE_WORKSPACE = process.env.TRIP_PHOTO_SMOKE_WORKSPACE || '';
 const CUSTOM_USER_DATA = process.env.TRIP_PHOTO_USER_DATA || '';
 
 if (CUSTOM_USER_DATA) {
@@ -71,6 +75,22 @@ function createEmptyState() {
   };
 }
 
+function normalizeVideoData(value = {}) {
+  const duration = Math.max(0, Number(value?.duration || 0));
+  const trimStart = Math.max(0, Math.min(duration || Number.MAX_SAFE_INTEGER, Number(value?.trimStart || 0)));
+  const rawTrimEnd = value?.trimEnd == null ? null : Number(value.trimEnd);
+  const trimEnd = Number.isFinite(rawTrimEnd) && rawTrimEnd > trimStart
+    ? Math.min(duration || rawTrimEnd, rawTrimEnd)
+    : null;
+  return {
+    duration,
+    width: Math.max(0, Math.round(Number(value?.width || 0))),
+    height: Math.max(0, Math.round(Number(value?.height || 0))),
+    trimStart,
+    trimEnd
+  };
+}
+
 function normalizeLoadedState(value) {
   if (!value || typeof value !== 'object' || !Array.isArray(value.projects)) {
     return createEmptyState();
@@ -83,19 +103,27 @@ function normalizeLoadedState(value) {
     createdAt: Number(project.createdAt || Date.now()),
     updatedAt: Number(project.updatedAt || Date.now()),
     assets: Array.isArray(project.assets)
-      ? project.assets.map((asset) => ({
-          id: String(asset.id || makeAssetId(asset.path || crypto.randomUUID())),
-          path: String(asset.path || ''),
-          name: String(asset.name || path.basename(asset.path || '未知文件')),
-          ext: String(asset.ext || path.extname(asset.path || '').toLowerCase()),
-          size: Number(asset.size || 0),
-          modifiedAt: Number(asset.modifiedAt || 0),
-          status: normalizeStatus(asset.status),
-          rating: Math.max(0, Math.min(5, Number(asset.rating || 0))),
-          analysis: asset.analysis && typeof asset.analysis === 'object'
-            ? asset.analysis
-            : { state: 'pending', score: null, flags: [] }
-        }))
+      ? project.assets.map((asset) => {
+          const assetPath = String(asset.path || '');
+          const kind = asset.kind === 'video' || isVideoFile(assetPath) ? 'video' : 'photo';
+          return {
+            id: String(asset.id || makeAssetId(assetPath || crypto.randomUUID())),
+            path: assetPath,
+            name: String(asset.name || path.basename(assetPath || '未知文件')),
+            ext: String(asset.ext || path.extname(assetPath || '').toLowerCase()),
+            kind,
+            size: Number(asset.size || 0),
+            modifiedAt: Number(asset.modifiedAt || 0),
+            status: normalizeStatus(asset.status),
+            rating: Math.max(0, Math.min(5, Number(asset.rating || 0))),
+            video: kind === 'video' ? normalizeVideoData(asset.video) : null,
+            analysis: kind === 'photo'
+              ? (asset.analysis && typeof asset.analysis === 'object'
+                  ? asset.analysis
+                  : { state: 'pending', score: null, flags: [] })
+              : { state: 'not-applicable', score: null, flags: [] }
+          };
+        })
       : []
   }));
 
@@ -144,7 +172,7 @@ function notify(channel, payload) {
   }
 }
 
-async function scanPhotoFolder(sourcePath, existingAssets = []) {
+async function scanMediaFolder(sourcePath, existingAssets = []) {
   const existingByPath = new Map(
     existingAssets.map((asset) => [path.resolve(asset.path).toLowerCase(), asset])
   );
@@ -169,24 +197,27 @@ async function scanPhotoFolder(sourcePath, existingAssets = []) {
         pendingDirectories.push(fullPath);
         continue;
       }
-      if (!entry.isFile() || !isPhotoFile(fullPath)) continue;
+      if (!entry.isFile() || !isMediaFile(fullPath)) continue;
 
       try {
         const stats = await fsp.stat(fullPath);
         const existing = existingByPath.get(path.resolve(fullPath).toLowerCase());
+        const kind = mediaKind(fullPath);
+        const unchanged = existing && existing.size === stats.size && existing.modifiedAt === stats.mtimeMs;
         assets.push({
           id: existing?.id || makeAssetId(fullPath),
           path: fullPath,
           name: entry.name,
           ext: path.extname(entry.name).toLowerCase(),
+          kind,
           size: stats.size,
           modifiedAt: stats.mtimeMs,
           status: normalizeStatus(existing?.status),
           rating: Math.max(0, Math.min(5, Number(existing?.rating || 0))),
-          analysis:
-            existing && existing.size === stats.size && existing.modifiedAt === stats.mtimeMs
-              ? existing.analysis
-              : { state: 'pending', score: null, flags: [] }
+          video: kind === 'video' && unchanged ? normalizeVideoData(existing.video) : (kind === 'video' ? normalizeVideoData() : null),
+          analysis: kind === 'photo'
+            ? (unchanged ? existing.analysis : { state: 'pending', score: null, flags: [] })
+            : { state: 'not-applicable', score: null, flags: [] }
         });
         visited += 1;
         if (visited % 150 === 0) {
@@ -207,6 +238,7 @@ function thumbnailPathFor(asset) {
 }
 
 async function createThumbnail(asset) {
+  if (asset.kind === 'video') return null;
   const cachePath = thumbnailPathFor(asset);
   try {
     const buffer = await fsp.readFile(cachePath);
@@ -270,9 +302,10 @@ async function analyzeProject(projectId, force = false) {
   const project = getProject(projectId);
   if (!project) return;
 
+  const photos = project.assets.filter((asset) => asset.kind === 'photo');
   const pending = force
-    ? project.assets
-    : project.assets.filter((asset) => (
+    ? photos
+    : photos.filter((asset) => (
         !asset.analysis
         || asset.analysis.state === 'pending'
         || asset.analysis.version !== ANALYSIS_VERSION
@@ -356,8 +389,58 @@ function mimeTypeFor(filePath) {
     '.webp': 'image/webp',
     '.gif': 'image/gif',
     '.bmp': 'image/bmp',
-    '.avif': 'image/avif'
+    '.avif': 'image/avif',
+    '.mp4': 'video/mp4',
+    '.m4v': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.webm': 'video/webm',
+    '.mkv': 'video/x-matroska',
+    '.avi': 'video/x-msvideo',
+    '.mts': 'video/mp2t',
+    '.m2ts': 'video/mp2t',
+    '.mpg': 'video/mpeg',
+    '.mpeg': 'video/mpeg',
+    '.3gp': 'video/3gpp'
   }[extension] || 'application/octet-stream';
+}
+
+async function streamAssetFile(asset, request) {
+  const stats = await fsp.stat(asset.path);
+  const total = stats.size;
+  const rangeHeader = request.headers.get('range');
+  const commonHeaders = {
+    'Accept-Ranges': 'bytes',
+    'Content-Type': mimeTypeFor(asset.path),
+    'Cache-Control': 'private, max-age=0'
+  };
+
+  if (rangeHeader) {
+    const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
+    if (!match) return new Response('Invalid range', { status: 416 });
+    let start = match[1] ? Number(match[1]) : 0;
+    let end = match[2] ? Number(match[2]) : total - 1;
+    if (!match[1] && match[2]) {
+      const suffixLength = Math.min(total, Number(match[2]));
+      start = total - suffixLength;
+      end = total - 1;
+    }
+    start = Math.max(0, Math.min(total - 1, start));
+    end = Math.max(start, Math.min(total - 1, end));
+    const stream = fs.createReadStream(asset.path, { start, end });
+    return new Response(Readable.toWeb(stream), {
+      status: 206,
+      headers: {
+        ...commonHeaders,
+        'Content-Length': String(end - start + 1),
+        'Content-Range': `bytes ${start}-${end}/${total}`
+      }
+    });
+  }
+
+  const stream = fs.createReadStream(asset.path);
+  return new Response(Readable.toWeb(stream), {
+    headers: { ...commonHeaders, 'Content-Length': String(total) }
+  });
 }
 
 async function handlePhotoProtocol(request) {
@@ -368,6 +451,11 @@ async function handlePhotoProtocol(request) {
     if (!asset) return new Response('Not found', { status: 404 });
 
     if (url.hostname === 'thumb') {
+      if (asset.kind === 'video') {
+        return new Response(placeholderSvg(asset), {
+          headers: { 'Content-Type': 'image/svg+xml; charset=utf-8' }
+        });
+      }
       const thumbnail = await ensureThumbnail(asset);
       if (!thumbnail) {
         return new Response(placeholderSvg(asset), {
@@ -383,6 +471,9 @@ async function handlePhotoProtocol(request) {
     }
 
     if (url.hostname === 'original') {
+      if (asset.kind === 'video') {
+        return streamAssetFile(asset, request);
+      }
       if (!canDirectPreview(asset.path)) {
         const thumbnail = await ensureThumbnail(asset);
         if (thumbnail) {
@@ -394,10 +485,7 @@ async function handlePhotoProtocol(request) {
           headers: { 'Content-Type': 'image/svg+xml; charset=utf-8' }
         });
       }
-      const buffer = await fsp.readFile(asset.path);
-      return new Response(buffer, {
-        headers: { 'Content-Type': mimeTypeFor(asset.path) }
-      });
+      return streamAssetFile(asset, request);
     }
   } catch (error) {
     console.error('读取图片失败：', error);
@@ -438,7 +526,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('dialog:choose-source', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择照片素材文件夹',
+      title: '选择照片和视频素材文件夹',
       properties: ['openDirectory']
     });
     if (result.canceled || !result.filePaths[0]) return null;
@@ -451,8 +539,8 @@ function registerIpcHandlers() {
     const stats = await fsp.stat(sourcePath);
     if (!stats.isDirectory()) throw new Error('请选择有效的文件夹');
 
-    const { assets, warnings } = await scanPhotoFolder(sourcePath);
-    if (!assets.length) throw new Error('这个文件夹及其子文件夹中没有找到支持的照片');
+    const { assets, warnings } = await scanMediaFolder(sourcePath);
+    if (!assets.length) throw new Error('这个文件夹及其子文件夹中没有找到支持的照片或视频');
 
     const now = Date.now();
     const project = {
@@ -484,7 +572,7 @@ function registerIpcHandlers() {
   ipcMain.handle('project:rescan', async (_event, projectId) => {
     const project = getProject(projectId);
     if (!project) throw new Error('项目不存在');
-    const { assets, warnings } = await scanPhotoFolder(project.sourcePath, project.assets);
+    const { assets, warnings } = await scanMediaFolder(project.sourcePath, project.assets);
     project.assets = assets;
     project.updatedAt = Date.now();
     rebuildAssetIndex();
@@ -517,13 +605,16 @@ function registerIpcHandlers() {
   ipcMain.handle('asset:update', async (_event, input) => {
     const project = getProject(input?.projectId);
     const asset = project?.assets.find((item) => item.id === input?.assetId);
-    if (!asset) throw new Error('照片不存在');
+    if (!asset) throw new Error('素材不存在');
 
     if (input.patch && Object.hasOwn(input.patch, 'status')) {
       asset.status = normalizeStatus(input.patch.status);
     }
     if (input.patch && Object.hasOwn(input.patch, 'rating')) {
       asset.rating = Math.max(0, Math.min(5, Number(input.patch.rating || 0)));
+    }
+    if (asset.kind === 'video' && input.patch && Object.hasOwn(input.patch, 'video')) {
+      asset.video = normalizeVideoData({ ...asset.video, ...input.patch.video });
     }
     project.updatedAt = Date.now();
     await queueStateSave();
@@ -534,21 +625,26 @@ function registerIpcHandlers() {
     const project = getProject(projectId);
     if (!project) throw new Error('项目不存在');
     for (const asset of project.assets) {
-      asset.analysis = { state: 'pending', score: null, flags: [] };
+      if (asset.kind === 'photo') {
+        asset.analysis = { state: 'pending', score: null, flags: [] };
+      }
     }
     await queueStateSave();
     setImmediate(() => analyzeProject(projectId, true));
     return true;
   });
 
-  ipcMain.handle('project:export-picks', async (_event, projectId) => {
+  ipcMain.handle('project:export-picks', async (_event, input) => {
+    const projectId = typeof input === 'string' ? input : input?.projectId;
+    const kind = typeof input === 'object' && input?.kind === 'video' ? 'video' : 'photo';
     const project = getProject(projectId);
     if (!project) throw new Error('项目不存在');
-    const picks = project.assets.filter((asset) => asset.status === 'pick');
-    if (!picks.length) throw new Error('还没有标记为“保留”的照片');
+    const picks = project.assets.filter((asset) => asset.kind === kind && asset.status === 'pick');
+    const kindLabel = kind === 'video' ? '视频' : '照片';
+    if (!picks.length) throw new Error(`还没有标记为“保留”的${kindLabel}`);
 
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择精选照片的导出位置',
+      title: `选择精选${kindLabel}的导出位置`,
       properties: ['openDirectory', 'createDirectory']
     });
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
@@ -558,12 +654,12 @@ function registerIpcHandlers() {
     const isInsideSource = relativeToSource === ''
       || (!relativeToSource.startsWith('..') && !path.isAbsolute(relativeToSource));
     if (isInsideSource) {
-      throw new Error('请选择原素材文件夹以外的位置，避免精选照片在重新扫描时被重复导入');
+      throw new Error(`请选择原素材文件夹以外的位置，避免精选${kindLabel}在重新扫描时被重复导入`);
     }
 
     const date = new Date();
     const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
-    const exportName = `${sanitizeFileName(project.name)}-精选-${stamp}`;
+    const exportName = `${sanitizeFileName(project.name)}-精选${kindLabel}-${stamp}`;
     const outputDirectory = await createUniqueDirectory(exportRoot, exportName);
     let copied = 0;
 
@@ -578,11 +674,27 @@ function registerIpcHandlers() {
       `项目：${project.name}`,
       `原素材目录：${project.sourcePath}`,
       `导出时间：${new Date().toLocaleString('zh-CN')}`,
-      `精选照片：${copied} 张`,
+      `精选${kindLabel}：${copied} ${kind === 'video' ? '段' : '张'}`,
       '',
-      '本文件夹由“旅图整理台”生成。原始照片未被移动或修改。'
+      kind === 'video'
+        ? '当前版本会安全复制完整视频原文件；设置的入点和出点记录在“视频片段清单.json”中，原视频不会被裁切或修改。'
+        : '本文件夹由“旅图整理台”生成。原始照片未被移动或修改。'
     ].join('\r\n');
     await fsp.writeFile(path.join(outputDirectory, '导出说明.txt'), note, 'utf8');
+    if (kind === 'video') {
+      const clipManifest = picks.map((asset) => ({
+        file: asset.name,
+        sourcePath: asset.path,
+        duration: Number(asset.video?.duration || 0),
+        in: Number(asset.video?.trimStart || 0),
+        out: asset.video?.trimEnd == null ? null : Number(asset.video.trimEnd)
+      }));
+      await fsp.writeFile(
+        path.join(outputDirectory, '视频片段清单.json'),
+        JSON.stringify(clipManifest, null, 2),
+        'utf8'
+      );
+    }
 
     return { canceled: false, copied, outputDirectory };
   });
@@ -611,6 +723,7 @@ function createWindow() {
     smokeQuery.smokeReviewFile = SMOKE_REVIEW_FILE;
   }
   if (SMOKE_COLOR_FILTER) smokeQuery.smokeColorFilter = SMOKE_COLOR_FILTER;
+  if (SMOKE_WORKSPACE) smokeQuery.smokeWorkspace = SMOKE_WORKSPACE;
   mainWindow.loadFile(
     path.join(__dirname, 'index.html'),
     Object.keys(smokeQuery).length ? { query: smokeQuery } : undefined
@@ -648,7 +761,7 @@ app.whenReady().then(async () => {
   let smokeProjectId = null;
   if (SMOKE_TEST && SMOKE_SOURCE) {
     const sourcePath = path.resolve(SMOKE_SOURCE);
-    const { assets } = await scanPhotoFolder(sourcePath);
+    const { assets } = await scanMediaFolder(sourcePath);
     const now = Date.now();
     smokeProjectId = crypto.randomUUID();
     libraryState = {

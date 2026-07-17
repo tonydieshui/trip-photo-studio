@@ -7,6 +7,11 @@ const PHOTO_EXTENSIONS = new Set([
   '.dng', '.cr2', '.cr3', '.nef', '.arw', '.raf', '.rw2', '.orf'
 ]);
 
+const VIDEO_EXTENSIONS = new Set([
+  '.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi',
+  '.mts', '.m2ts', '.mpg', '.mpeg', '.3gp'
+]);
+
 const DIRECT_PREVIEW_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif'
 ]);
@@ -15,6 +20,18 @@ const VALID_STATUSES = new Set(['unreviewed', 'pick', 'maybe', 'reject']);
 
 function isPhotoFile(filePath) {
   return PHOTO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function isVideoFile(filePath) {
+  return VIDEO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function isMediaFile(filePath) {
+  return isPhotoFile(filePath) || isVideoFile(filePath);
+}
+
+function mediaKind(filePath) {
+  return isVideoFile(filePath) ? 'video' : 'photo';
 }
 
 function canDirectPreview(filePath) {
@@ -59,9 +76,13 @@ function summarizeAssets(assets = []) {
 
 module.exports = {
   PHOTO_EXTENSIONS,
+  VIDEO_EXTENSIONS,
   DIRECT_PREVIEW_EXTENSIONS,
   VALID_STATUSES,
   isPhotoFile,
+  isVideoFile,
+  isMediaFile,
+  mediaKind,
   canDirectPreview,
   makeAssetId,
   sanitizeFileName,

@@ -47,15 +47,15 @@
               <span class="postcard-mountain mountain-two"></span>
             </div>
           </div>
-          <p class="eyebrow">LOCAL-FIRST PHOTO CULLING</p>
+          <p class="eyebrow">LOCAL-FIRST TRAVEL MEDIA</p>
           <h1>旅行结束了，整理不该才刚开始。</h1>
           <p class="welcome-copy">
-            选择电脑里的任意照片文件夹，快速完成浏览、筛选和精选导出。所有分析都在本机进行。
+            选择电脑里的任意旅行素材文件夹，快速完成照片与视频浏览、筛选和精选导出。所有分析都在本机进行。
           </p>
-          <button class="primary-button large" id="welcome-import" type="button">选择照片文件夹</button>
+          <button class="primary-button large" id="welcome-import" type="button">选择旅行素材文件夹</button>
           <div class="welcome-features">
             <span>递归扫描子文件夹</span>
-            <span>后台生成缩略图</span>
+            <span>照片与视频分开整理</span>
             <span>筛选状态自动保存</span>
           </div>
         </section>
@@ -79,9 +79,18 @@
             </div>
           </header>
 
+          <nav class="media-workspace-switch" id="media-workspace-switch" aria-label="素材类型">
+            <button class="media-workspace-button active" data-workspace="photo" type="button">
+              <span>照片工作台</span><small id="photo-workspace-count">0</small>
+            </button>
+            <button class="media-workspace-button" data-workspace="video" type="button">
+              <span>视频工作台</span><small id="video-workspace-count">0</small>
+            </button>
+          </nav>
+
           <section class="summary-strip" aria-label="筛选统计">
             <button class="summary-card active" data-summary-filter="all" type="button">
-              <span>全部素材</span>
+              <span id="summary-total-label">全部照片</span>
               <strong id="count-total">0</strong>
             </button>
             <button class="summary-card" data-summary-filter="unreviewed" type="button">
@@ -97,12 +106,12 @@
               <strong id="count-maybe">0</strong>
             </button>
             <button class="summary-card issue" data-summary-filter="issues" type="button">
-              <span>质量提示</span>
+              <span id="summary-issues-label">质量提示</span>
               <strong id="count-issues">0</strong>
             </button>
           </section>
 
-          <section class="project-insights" aria-label="项目照片理解">
+          <section class="project-insights photo-only" aria-label="项目照片理解">
             <div class="insights-heading">
               <div>
                 <p class="eyebrow">LOCAL VISUAL UNDERSTANDING</p>
@@ -111,6 +120,17 @@
               <button class="ghost-button compact" id="restart-analysis-button" type="button">重新深入分析</button>
             </div>
             <div class="insights-content" id="insights-content"></div>
+          </section>
+
+          <section class="video-overview video-only" id="video-overview" aria-label="项目视频概览">
+            <div class="insights-heading">
+              <div>
+                <p class="eyebrow">VIDEO INBOX</p>
+                <h2>这组视频的素材概览</h2>
+              </div>
+              <span class="video-overview-note">悬停卡片可静音预览，点开后设置入点与出点</span>
+            </div>
+            <div class="video-overview-content" id="video-overview-content"></div>
           </section>
 
           <section class="controls-bar">
@@ -136,11 +156,20 @@
                 <option value="minimal">极简画面</option>
                 <option value="high-score">技术分 85+</option>
               </select>
+              <select class="video-only" id="video-feature-filter" aria-label="视频特征筛选">
+                <option value="all">视频特征：全部</option>
+                <option value="portrait">竖屏视频</option>
+                <option value="landscape">横屏视频</option>
+                <option value="short">短片段：15 秒内</option>
+                <option value="medium">中片段：15～60 秒</option>
+                <option value="long">长片段：60 秒以上</option>
+                <option value="trimmed">已标记片段</option>
+              </select>
               <label class="search-box">
                 <span>⌕</span>
                 <input id="search-input" type="search" placeholder="搜索文件、路径或风格" />
               </label>
-              <select id="sort-select" aria-label="照片排序">
+              <select id="sort-select" aria-label="素材排序">
                 <option value="newest">文件时间：新到旧</option>
                 <option value="oldest">文件时间：旧到新</option>
                 <option value="name">文件名</option>
@@ -154,7 +183,7 @@
             </div>
           </section>
 
-          <details class="color-lab" id="color-lab" open>
+          <details class="color-lab photo-only" id="color-lab" open>
             <summary>
               <span class="color-lab-mark" aria-hidden="true">◒</span>
               <span class="color-lab-title">
@@ -249,7 +278,7 @@
 
           <div class="gallery-meta">
             <span id="result-count">显示 0 张</span>
-            <span class="shortcut-hint">点开照片后可用 P / U / X 快速筛选</span>
+            <span class="shortcut-hint" id="shortcut-hint">点开照片后可用 P / U / X 快速筛选</span>
           </div>
 
           <section class="gallery" id="gallery" aria-live="polite"></section>
@@ -268,7 +297,7 @@
         <button class="folder-picker" id="choose-folder-button" type="button">
           <span class="folder-icon">⌑</span>
           <span>
-            <strong id="folder-picker-title">选择照片素材文件夹</strong>
+            <strong id="folder-picker-title">选择照片和视频素材文件夹</strong>
             <small id="folder-picker-path">支持包含多个相机子文件夹</small>
           </span>
           <span class="folder-arrow">›</span>
@@ -294,7 +323,7 @@
         <header class="review-header">
           <button class="round-button" id="close-review" type="button" aria-label="退出大图">×</button>
           <div class="review-counter" id="review-counter">1 / 1</div>
-          <div class="zoom-controls" aria-label="图片缩放">
+          <div class="zoom-controls photo-review-only" aria-label="图片缩放">
             <button class="zoom-button" id="zoom-out" type="button" title="缩小">−</button>
             <input id="zoom-slider" type="range" min="10" max="500" step="5" value="100" aria-label="缩放百分比" />
             <span id="zoom-level">100%</span>
@@ -308,6 +337,7 @@
         <div class="review-image-wrap" id="review-image-wrap">
           <button class="nav-button previous" id="previous-photo" type="button" aria-label="上一张">‹</button>
           <img id="review-image" alt="照片大图预览" />
+          <video id="review-video" controls playsinline preload="metadata" hidden></video>
           <button class="nav-button next" id="next-photo" type="button" aria-label="下一张">›</button>
         </div>
       </div>
@@ -342,7 +372,7 @@
           <div class="rating-row" id="rating-row"></div>
         </section>
 
-        <section class="review-section understanding-section">
+        <section class="review-section understanding-section photo-review-only">
           <div class="section-title-row">
             <h3>本地视觉理解</h3>
             <span>不上传照片</span>
@@ -357,13 +387,32 @@
           <div class="analysis-metrics" id="analysis-metrics"></div>
         </section>
 
-        <section class="review-section quality-section">
+        <section class="review-section quality-section photo-review-only">
           <div class="section-title-row">
             <h3>本地质量提示</h3>
             <span id="quality-score"></span>
           </div>
           <div class="quality-flags" id="quality-flags"></div>
           <p class="quality-note">技术分只反映曝光、层次和细节，不评价故事性与个人审美。</p>
+        </section>
+
+        <section class="review-section video-clip-section video-review-only">
+          <div class="section-title-row">
+            <h3>Vlog 片段标记</h3>
+            <span id="video-duration-label">等待读取</span>
+          </div>
+          <p class="video-clip-copy" id="video-clip-copy">播放到合适位置后，将当前时间设为入点或出点。</p>
+          <div class="clip-range-visual" id="clip-range-visual"><i></i></div>
+          <div class="clip-time-row">
+            <span>入点 <strong id="video-trim-start">00:00</strong></span>
+            <span>出点 <strong id="video-trim-end">片尾</strong></span>
+          </div>
+          <div class="clip-actions">
+            <button class="ghost-button compact" id="set-video-in" type="button">设为入点</button>
+            <button class="ghost-button compact" id="set-video-out" type="button">设为出点</button>
+            <button class="ghost-button compact" id="clear-video-trim" type="button">清除标记</button>
+          </div>
+          <p class="video-clip-note">当前版本保存片段范围并导出清单；原视频仍以完整文件安全复制。</p>
         </section>
 
         <section class="review-section file-section">

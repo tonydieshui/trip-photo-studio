@@ -4,6 +4,9 @@ const assert = require('node:assert/strict');
 const {
   canDirectPreview,
   isPhotoFile,
+  isVideoFile,
+  isMediaFile,
+  mediaKind,
   makeAssetId,
   normalizeStatus,
   sanitizeFileName,
@@ -14,6 +17,15 @@ test('识别常见照片和 RAW 文件', () => {
   assert.equal(isPhotoFile('C:/photos/a.JPG'), true);
   assert.equal(isPhotoFile('C:/photos/a.CR3'), true);
   assert.equal(isPhotoFile('C:/photos/a.mp4'), false);
+});
+
+test('识别常见旅行视频并区分素材类型', () => {
+  assert.equal(isVideoFile('C:/travel/clip.MP4'), true);
+  assert.equal(isVideoFile('C:/travel/camera.MTS'), true);
+  assert.equal(isVideoFile('C:/travel/photo.jpg'), false);
+  assert.equal(isMediaFile('C:/travel/clip.mov'), true);
+  assert.equal(mediaKind('C:/travel/clip.webm'), 'video');
+  assert.equal(mediaKind('C:/travel/photo.jpeg'), 'photo');
 });
 
 test('区分可直接预览格式', () => {

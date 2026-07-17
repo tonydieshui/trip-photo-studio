@@ -43,7 +43,15 @@ const els = {
   projectTitle: document.querySelector('#project-title'),
   projectPath: document.querySelector('#project-path'),
   analysisStatus: document.querySelector('#analysis-status'),
+  workspaceSwitch: document.querySelector('#media-workspace-switch'),
+  photoWorkspaceCount: document.querySelector('#photo-workspace-count'),
+  videoWorkspaceCount: document.querySelector('#video-workspace-count'),
+  summaryTotalLabel: document.querySelector('#summary-total-label'),
+  summaryIssuesLabel: document.querySelector('#summary-issues-label'),
+  shortcutHint: document.querySelector('#shortcut-hint'),
   insightsContent: document.querySelector('#insights-content'),
+  videoOverview: document.querySelector('#video-overview'),
+  videoOverviewContent: document.querySelector('#video-overview-content'),
   restartAnalysisButton: document.querySelector('#restart-analysis-button'),
   gallery: document.querySelector('#gallery'),
   resultCount: document.querySelector('#result-count'),
@@ -51,6 +59,7 @@ const els = {
   searchInput: document.querySelector('#search-input'),
   sortSelect: document.querySelector('#sort-select'),
   featureFilter: document.querySelector('#feature-filter'),
+  videoFeatureFilter: document.querySelector('#video-feature-filter'),
   colorFilterOptions: document.querySelector('#color-filter-options'),
   colorFilterLabel: document.querySelector('#color-filter-label'),
   colorLab: document.querySelector('#color-lab'),
@@ -66,6 +75,7 @@ const els = {
   reviewOverlay: document.querySelector('#review-overlay'),
   reviewImageWrap: document.querySelector('#review-image-wrap'),
   reviewImage: document.querySelector('#review-image'),
+  reviewVideo: document.querySelector('#review-video'),
   reviewCounter: document.querySelector('#review-counter'),
   reviewFileName: document.querySelector('#review-file-name'),
   reviewFileMeta: document.querySelector('#review-file-meta'),
@@ -78,6 +88,14 @@ const els = {
   colorStory: document.querySelector('#color-story'),
   analysisMetrics: document.querySelector('#analysis-metrics'),
   fileDetails: document.querySelector('#file-details'),
+  videoDurationLabel: document.querySelector('#video-duration-label'),
+  videoClipCopy: document.querySelector('#video-clip-copy'),
+  videoTrimStart: document.querySelector('#video-trim-start'),
+  videoTrimEnd: document.querySelector('#video-trim-end'),
+  clipRangeVisual: document.querySelector('#clip-range-visual'),
+  setVideoIn: document.querySelector('#set-video-in'),
+  setVideoOut: document.querySelector('#set-video-out'),
+  clearVideoTrim: document.querySelector('#clear-video-trim'),
   previousPhoto: document.querySelector('#previous-photo'),
   nextPhoto: document.querySelector('#next-photo'),
   zoomOut: document.querySelector('#zoom-out'),
@@ -94,6 +112,8 @@ let searchQuery = '';
 let sortMode = 'newest';
 let activeFeatureFilter = 'all';
 let activeColorFilter = 'all';
+let activeVideoFeatureFilter = 'all';
+let activeWorkspace = 'photo';
 let visibleLimit = 160;
 let filteredAssets = [];
 let reviewAssetId = null;
@@ -122,6 +142,34 @@ function escapeHtml(value) {
 
 function activeProject() {
   return libraryState.projects.find((project) => project.id === libraryState.activeProjectId) || null;
+}
+
+function assetKind(asset) {
+  return asset?.kind === 'video' ? 'video' : 'photo';
+}
+
+function assetsForWorkspace(project, workspace = activeWorkspace) {
+  return (project?.assets || []).filter((asset) => assetKind(asset) === workspace);
+}
+
+function isVideoWorkspace() {
+  return activeWorkspace === 'video';
+}
+
+function formatDuration(value) {
+  const seconds = Math.max(0, Math.floor(Number(value) || 0));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  const hours = Math.floor(minutes / 60);
+  const minutePart = String(minutes % 60).padStart(2, '0');
+  const secondPart = String(remainder).padStart(2, '0');
+  return hours ? `${String(hours).padStart(2, '0')}:${minutePart}:${secondPart}` : `${minutePart}:${secondPart}`;
+}
+
+function videoOrientation(asset) {
+  const video = asset?.video || {};
+  if (!video.width || !video.height) return 'unknown';
+  return video.width < video.height ? 'portrait' : 'landscape';
 }
 
 function formatBytes(bytes) {
@@ -177,18 +225,35 @@ function matchesColor(asset, filter) {
   return true;
 }
 
-function projectSummary(project) {
+function matchesVideoFeature(asset, filter) {
+  if (filter === 'all') return true;
+  const video = asset.video || {};
+  const duration = Number(video.duration || 0);
+  if (filter === 'portrait' || filter === 'landscape') return videoOrientation(asset) === filter;
+  if (filter === 'short') return duration > 0 && duration <= 15;
+  if (filter === 'medium') return duration > 15 && duration <= 60;
+  if (filter === 'long') return duration > 60;
+  if (filter === 'trimmed') return Number(video.trimStart || 0) > 0 || video.trimEnd != null;
+  return true;
+}
+
+function projectSummary(project, workspace = null) {
+  const assets = workspace ? assetsForWorkspace(project, workspace) : (project?.assets || []);
   const summary = {
-    total: project?.assets.length || 0,
+    total: assets.length,
     unreviewed: 0,
     pick: 0,
     maybe: 0,
     reject: 0,
     issues: 0
   };
-  for (const asset of project?.assets || []) {
+  for (const asset of assets) {
     summary[STATUS[asset.status] ? asset.status : 'unreviewed'] += 1;
-    if (asset.analysis?.flags?.length) summary.issues += 1;
+    if (workspace === 'video') {
+      if (Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null) summary.issues += 1;
+    } else if (asset.analysis?.flags?.length) {
+      summary.issues += 1;
+    }
   }
   return summary;
 }
@@ -206,18 +271,20 @@ function showToast(message, type = 'normal', duration = 3600) {
 function renderProjects() {
   els.projectCount.textContent = String(libraryState.projects.length);
   if (!libraryState.projects.length) {
-    els.projectList.innerHTML = '<div class="project-list-empty">导入一个本地照片文件夹后，旅行项目会出现在这里。</div>';
+    els.projectList.innerHTML = '<div class="project-list-empty">导入一个本地旅行素材文件夹后，旅行项目会出现在这里。</div>';
     return;
   }
 
   els.projectList.innerHTML = libraryState.projects.map((project) => {
     const summary = projectSummary(project);
+    const photoCount = assetsForWorkspace(project, 'photo').length;
+    const videoCount = assetsForWorkspace(project, 'video').length;
     return `
       <button class="project-list-button ${project.id === libraryState.activeProjectId ? 'active' : ''}" data-project-id="${project.id}" type="button">
         <span class="project-thumb">◇</span>
         <span class="project-list-copy">
           <strong>${escapeHtml(project.name)}</strong>
-          <small>${summary.pick} 张保留 · ${summary.unreviewed} 张未筛选</small>
+          <small>${photoCount} 张照片 · ${videoCount} 段视频 · ${summary.pick} 项保留</small>
         </span>
         <span class="project-list-count">${summary.total}</span>
       </button>
@@ -235,12 +302,13 @@ function updateFilterButtons() {
 }
 
 function renderColorFilters(project) {
+  const photos = assetsForWorkspace(project, 'photo');
   const buttons = els.colorFilterOptions.querySelectorAll('[data-color-filter]');
   buttons.forEach((button) => {
     const filter = button.dataset.colorFilter;
     const count = filter === 'all'
-      ? project.assets.length
-      : project.assets.filter((asset) => matchesColor(asset, filter)).length;
+      ? photos.length
+      : photos.filter((asset) => matchesColor(asset, filter)).length;
     button.classList.toggle('active', filter === activeColorFilter);
     const counter = button.querySelector('small');
     if (counter) counter.textContent = String(count);
@@ -252,15 +320,25 @@ function renderColorFilters(project) {
 
 function calculateFilteredAssets(project) {
   const query = searchQuery.trim().toLocaleLowerCase('zh-CN');
-  const list = project.assets.filter((asset) => {
+  const list = assetsForWorkspace(project).filter((asset) => {
     const statusMatch = activeFilter === 'all'
-      || (activeFilter === 'issues' && asset.analysis?.flags?.length)
+      || (activeFilter === 'issues' && (isVideoWorkspace()
+        ? Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null
+        : asset.analysis?.flags?.length))
       || asset.status === activeFilter;
     if (!statusMatch) return false;
-    if (!matchesFeature(asset, activeFeatureFilter)) return false;
-    if (!matchesColor(asset, activeColorFilter)) return false;
+    if (isVideoWorkspace()) {
+      if (!matchesVideoFeature(asset, activeVideoFeatureFilter)) return false;
+    } else {
+      if (!matchesFeature(asset, activeFeatureFilter)) return false;
+      if (!matchesColor(asset, activeColorFilter)) return false;
+    }
     if (!query) return true;
-    const understandingText = [asset.analysis?.summary, ...(asset.analysis?.styleTags || [])]
+    const understandingText = [
+      asset.analysis?.summary,
+      ...(asset.analysis?.styleTags || []),
+      ...(isVideoWorkspace() ? ['视频', formatDuration(asset.video?.duration)] : [])
+    ]
       .filter(Boolean)
       .join(' ')
       .toLocaleLowerCase('zh-CN');
@@ -279,8 +357,18 @@ function calculateFilteredAssets(project) {
 }
 
 function renderAnalysisStatus(project) {
+  if (isVideoWorkspace()) {
+    const videos = assetsForWorkspace(project, 'video');
+    const marked = videos.filter((asset) => (
+      Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null
+    )).length;
+    els.analysisStatus.textContent = marked ? `已标记 ${marked} 段片段` : `${videos.length} 段视频素材`;
+    els.analysisStatus.classList.remove('running');
+    return;
+  }
   const progress = analysisProgress.get(project.id);
-  const pending = project.assets.filter((asset) => (
+  const photos = assetsForWorkspace(project, 'photo');
+  const pending = photos.filter((asset) => (
     asset.analysis?.state === 'pending' || asset.analysis?.version !== ANALYSIS_VERSION
   )).length;
   if (progress?.running) {
@@ -296,10 +384,11 @@ function renderAnalysisStatus(project) {
 }
 
 function projectInsights(project) {
-  const analyses = project.assets
+  const photos = assetsForWorkspace(project, 'photo');
+  const analyses = photos
     .map((asset) => asset.analysis)
     .filter((analysis) => analysis?.state === 'done' && analysis.version === ANALYSIS_VERSION);
-  const total = project.assets.length;
+  const total = photos.length;
   const averageScore = analyses.length
     ? Math.round(analyses.reduce((sum, analysis) => sum + Number(analysis.technicalScore || 0), 0) / analyses.length)
     : null;
@@ -337,6 +426,17 @@ function projectInsights(project) {
   };
 }
 
+function videoInsights(project) {
+  const videos = assetsForWorkspace(project, 'video');
+  const totalDuration = videos.reduce((sum, asset) => sum + Number(asset.video?.duration || 0), 0);
+  const portraitCount = videos.filter((asset) => videoOrientation(asset) === 'portrait').length;
+  const markedCount = videos.filter((asset) => (
+    Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null
+  )).length;
+  const metadataCount = videos.filter((asset) => Number(asset.video?.duration || 0) > 0).length;
+  return { total: videos.length, totalDuration, portraitCount, markedCount, metadataCount };
+}
+
 function renderInsights(project) {
   const insights = projectInsights(project);
   const tags = insights.topTags.length ? insights.topTags.join(' · ') : '等待生成风格标签';
@@ -366,28 +466,56 @@ function renderInsights(project) {
   `;
 }
 
+function renderVideoOverview(project) {
+  const insights = videoInsights(project);
+  els.videoOverviewContent.innerHTML = `
+    <article class="video-overview-stat">
+      <span>视频素材</span><strong>${insights.total}</strong>
+      <em>${insights.metadataCount} 段已读取时长</em>
+    </article>
+    <article class="video-overview-stat">
+      <span>累计时长</span><strong>${formatDuration(insights.totalDuration)}</strong>
+      <em>按已读取的素材汇总</em>
+    </article>
+    <article class="video-overview-stat">
+      <span>竖屏素材</span><strong>${insights.portraitCount}</strong>
+      <em>适合短视频与朋友圈</em>
+    </article>
+    <article class="video-overview-stat accent">
+      <span>已标记片段</span><strong>${insights.markedCount}</strong>
+      <em>已设置入点或出点</em>
+    </article>
+  `;
+}
+
 function renderSummary(project) {
-  const summary = projectSummary(project);
+  const summary = projectSummary(project, activeWorkspace);
+  const kindLabel = isVideoWorkspace() ? '视频' : '照片';
   for (const key of ['total', 'unreviewed', 'pick', 'maybe', 'issues']) {
     document.querySelector(`#count-${key}`).textContent = String(summary[key]);
   }
-  els.exportButton.textContent = summary.pick ? `导出保留照片 · ${summary.pick}` : '导出保留照片';
+  els.summaryTotalLabel.textContent = `全部${kindLabel}`;
+  els.summaryIssuesLabel.textContent = isVideoWorkspace() ? '已标记片段' : '质量提示';
+  els.exportButton.textContent = summary.pick ? `导出保留${kindLabel} · ${summary.pick}` : `导出保留${kindLabel}`;
 }
 
 function renderGallery(project) {
   filteredAssets = calculateFilteredAssets(project);
   const shown = filteredAssets.slice(0, visibleLimit);
-  els.resultCount.textContent = filteredAssets.length === project.assets.length
-    ? `共 ${filteredAssets.length} 张照片`
-    : `显示 ${filteredAssets.length} / ${project.assets.length} 张`;
+  const total = assetsForWorkspace(project).length;
+  const unit = isVideoWorkspace() ? '段视频' : '张照片';
+  els.resultCount.textContent = filteredAssets.length === total
+    ? `共 ${filteredAssets.length} ${unit}`
+    : `显示 ${filteredAssets.length} / ${total} ${unit}`;
 
   if (!shown.length) {
-    els.gallery.innerHTML = '<div class="gallery-empty">这个筛选条件下没有照片</div>';
+    els.gallery.innerHTML = `<div class="gallery-empty">这个筛选条件下没有${isVideoWorkspace() ? '视频' : '照片'}</div>`;
     observeLoadSentinel(false);
     return;
   }
 
   els.gallery.innerHTML = shown.map((asset) => {
+    if (assetKind(asset) === 'video') return videoCardMarkup(asset);
     const status = STATUS[asset.status] || STATUS.unreviewed;
     const flags = asset.analysis?.flags || [];
     const score = asset.analysis?.score;
@@ -428,7 +556,86 @@ function renderGallery(project) {
     `;
   }).join('');
 
+  if (isVideoWorkspace()) wireVideoPreviews();
   observeLoadSentinel(shown.length < filteredAssets.length);
+}
+
+function videoCardMarkup(asset) {
+  const status = STATUS[asset.status] || STATUS.unreviewed;
+  const rating = asset.rating > 0 ? '★'.repeat(asset.rating) : '';
+  const duration = Number(asset.video?.duration || 0);
+  const orientation = videoOrientation(asset);
+  const isTrimmed = Number(asset.video?.trimStart || 0) > 0 || asset.video?.trimEnd != null;
+  return `
+    <article class="photo-card video-card ${orientation === 'portrait' ? 'video-portrait' : ''} status-${asset.status}" data-asset-id="${asset.id}">
+      <button class="photo-open-button" data-open-asset="${asset.id}" type="button" aria-label="查看视频 ${escapeHtml(asset.name)}">
+        <div class="photo-media video-media">
+          <video class="video-card-preview" data-video-preview="${asset.id}" muted loop playsinline preload="metadata" src="travel-photo://original/${asset.id}"></video>
+          <div class="video-poster-fallback"><span>▶</span></div>
+          <div class="card-top-badges">
+            <span class="format-badge">${escapeHtml(asset.ext.replace('.', '').toUpperCase())}</span>
+            <span class="video-duration-badge">${duration ? formatDuration(duration) : '读取时长…'}</span>
+          </div>
+          <span class="video-play-badge">▶ 悬停预览</span>
+          ${orientation !== 'unknown' ? `<span class="video-orientation-badge">${orientation === 'portrait' ? '竖屏' : '横屏'}</span>` : ''}
+          ${isTrimmed ? '<span class="video-trim-badge">已标记片段</span>' : ''}
+        </div>
+        <div class="photo-copy">
+          <span>
+            <strong>${escapeHtml(asset.name)}</strong>
+            <small>${formatDate(asset.modifiedAt)} · ${formatBytes(asset.size)}${duration ? ` · ${formatDuration(duration)}` : ''}</small>
+          </span>
+          <span>
+            <span class="status-badge">${status.symbol} ${status.label}</span>
+            <small class="rating-mini">${rating}</small>
+          </span>
+        </div>
+      </button>
+      <div class="quick-actions" aria-label="快速筛选">
+        <button data-quick-status="pick" data-asset-id="${asset.id}" type="button" title="保留">✓</button>
+        <button data-quick-status="maybe" data-asset-id="${asset.id}" type="button" title="待定">?</button>
+        <button data-quick-status="reject" data-asset-id="${asset.id}" type="button" title="淘汰">×</button>
+      </div>
+    </article>
+  `;
+}
+
+async function persistVideoMetadata(assetId, videoElement) {
+  const project = activeProject();
+  const asset = project?.assets.find((item) => item.id === assetId);
+  if (!project || !asset || assetKind(asset) !== 'video') return;
+  const next = {
+    ...asset.video,
+    duration: Number.isFinite(videoElement.duration) ? videoElement.duration : 0,
+    width: Number(videoElement.videoWidth || 0),
+    height: Number(videoElement.videoHeight || 0)
+  };
+  const changed = Math.abs(Number(asset.video?.duration || 0) - next.duration) > 0.1
+    || Number(asset.video?.width || 0) !== next.width
+    || Number(asset.video?.height || 0) !== next.height;
+  if (!changed) return;
+  asset.video = next;
+  if (isVideoWorkspace()) renderVideoOverview(project);
+  try {
+    await api.updateAsset({ projectId: project.id, assetId, patch: { video: next } });
+  } catch {
+    showToast('无法保存这段视频的本地信息', 'error');
+  }
+}
+
+function wireVideoPreviews() {
+  els.gallery.querySelectorAll('[data-video-preview]').forEach((video) => {
+    const assetId = video.dataset.videoPreview;
+    const card = video.closest('.video-card');
+    video.addEventListener('loadedmetadata', () => persistVideoMetadata(assetId, video), { once: true });
+    video.addEventListener('error', () => card?.classList.add('video-preview-error'), { once: true });
+    card?.addEventListener('mouseenter', () => {
+      video.play().catch(() => undefined);
+    });
+    card?.addEventListener('mouseleave', () => {
+      video.pause();
+    });
+  });
 }
 
 function renderActiveProject() {
@@ -441,15 +648,38 @@ function renderActiveProject() {
 
   els.welcomeView.hidden = true;
   els.projectView.hidden = false;
+  if (!assetsForWorkspace(project, activeWorkspace).length) {
+    activeWorkspace = assetsForWorkspace(project, activeWorkspace === 'photo' ? 'video' : 'photo').length
+      ? (activeWorkspace === 'photo' ? 'video' : 'photo')
+      : 'photo';
+  }
+  els.projectView.classList.toggle('video-mode', isVideoWorkspace());
   els.projectTitle.textContent = project.name;
   els.projectPath.textContent = project.sourcePath;
   els.projectPath.parentElement.title = project.sourcePath;
+  renderMediaWorkspace(project);
   renderAnalysisStatus(project);
   renderSummary(project);
   renderInsights(project);
+  renderVideoOverview(project);
   updateFilterButtons();
   renderColorFilters(project);
   renderGallery(project);
+}
+
+function renderMediaWorkspace(project) {
+  const photos = assetsForWorkspace(project, 'photo').length;
+  const videos = assetsForWorkspace(project, 'video').length;
+  els.photoWorkspaceCount.textContent = String(photos);
+  els.videoWorkspaceCount.textContent = String(videos);
+  els.workspaceSwitch.querySelectorAll('[data-workspace]').forEach((button) => {
+    const workspace = button.dataset.workspace;
+    button.classList.toggle('active', workspace === activeWorkspace);
+    button.disabled = workspace === 'photo' ? photos === 0 : videos === 0;
+  });
+  els.shortcutHint.textContent = isVideoWorkspace()
+    ? '悬停视频可静音预览，点开后可设置入点 / 出点'
+    : '点开照片后可用 P / U / X 快速筛选';
 }
 
 function renderAll() {
@@ -476,12 +706,36 @@ async function selectProject(projectId) {
   activeFilter = 'all';
   activeFeatureFilter = 'all';
   activeColorFilter = 'all';
+  activeVideoFeatureFilter = 'all';
+  activeWorkspace = assetsForWorkspace(activeProject(), 'photo').length ? 'photo' : 'video';
   searchQuery = '';
   els.searchInput.value = '';
   els.featureFilter.value = 'all';
+  els.videoFeatureFilter.value = 'all';
   visibleLimit = 160;
   renderAll();
   await api.setActiveProject(projectId);
+}
+
+function setWorkspace(workspace) {
+  if (!['photo', 'video'].includes(workspace) || workspace === activeWorkspace) return;
+  const project = activeProject();
+  if (!assetsForWorkspace(project, workspace).length) {
+    showToast(workspace === 'video' ? '当前项目还没有视频素材' : '当前项目还没有照片素材', 'error');
+    return;
+  }
+  closeReview();
+  activeWorkspace = workspace;
+  activeFilter = 'all';
+  activeFeatureFilter = 'all';
+  activeColorFilter = 'all';
+  activeVideoFeatureFilter = 'all';
+  searchQuery = '';
+  els.searchInput.value = '';
+  els.featureFilter.value = 'all';
+  els.videoFeatureFilter.value = 'all';
+  visibleLimit = 160;
+  renderActiveProject();
 }
 
 function setColorFilter(filter) {
@@ -507,7 +761,7 @@ async function updateAsset(assetId, patch) {
   const asset = project?.assets.find((item) => item.id === assetId);
   if (!project || !asset) return;
 
-  const previous = { status: asset.status, rating: asset.rating };
+  const previous = { status: asset.status, rating: asset.rating, video: { ...(asset.video || {}) } };
   const reviewWasOpen = !els.reviewOverlay.hidden && reviewAssetId === assetId;
   const previousIndex = filteredAssets.findIndex((item) => item.id === assetId);
   Object.assign(asset, patch);
@@ -548,7 +802,11 @@ function closeReview() {
   reviewAssetId = null;
   loadedReviewAssetId = null;
   els.reviewOverlay.hidden = true;
+  els.reviewOverlay.classList.remove('video-review');
   els.reviewImage.removeAttribute('src');
+  els.reviewVideo.pause();
+  els.reviewVideo.removeAttribute('src');
+  els.reviewVideo.load();
 }
 
 function updateZoomUi() {
@@ -633,6 +891,32 @@ function renderReview() {
   els.previousPhoto.disabled = index <= 0;
   els.nextPhoto.disabled = index < 0 || index >= filteredAssets.length - 1;
 
+  const isVideo = assetKind(asset) === 'video';
+  els.reviewOverlay.classList.toggle('video-review', isVideo);
+  els.reviewImage.hidden = isVideo;
+  els.reviewVideo.hidden = !isVideo;
+  if (isVideo) {
+    els.reviewImageWrap.classList.remove('can-pan', 'panning');
+    if (loadedReviewAssetId !== asset.id) {
+      loadedReviewAssetId = asset.id;
+      els.reviewVideo.onloadedmetadata = () => {
+        persistVideoMetadata(asset.id, els.reviewVideo);
+        const currentAsset = activeProject()?.assets.find((item) => item.id === asset.id);
+        if (currentAsset?.video?.trimStart > 0) {
+          els.reviewVideo.currentTime = Math.min(currentAsset.video.trimStart, Math.max(0, els.reviewVideo.duration - 0.1));
+        }
+        if (reviewAssetId === asset.id) renderVideoReview(currentAsset || asset);
+      };
+      els.reviewVideo.onerror = () => showToast('当前视频格式无法在应用内预览，但仍可标记和导出原文件', 'error', 6000);
+      els.reviewVideo.src = `travel-photo://original/${asset.id}`;
+    }
+    renderReviewControls(asset);
+    renderVideoReview(asset);
+    return;
+  }
+
+  els.reviewVideo.pause();
+
   const originalUrl = `travel-photo://original/${asset.id}`;
   const thumbnailUrl = `travel-photo://thumb/${asset.id}`;
   if (loadedReviewAssetId !== asset.id) {
@@ -645,15 +929,7 @@ function renderReview() {
     els.reviewImage.src = originalUrl;
   }
 
-  document.querySelectorAll('[data-review-status]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.reviewStatus === asset.status);
-  });
-
-  els.ratingRow.innerHTML = Array.from({ length: 6 }, (_, rating) => `
-    <button class="rating-button ${asset.rating === rating ? 'active' : ''}" data-rating="${rating}" type="button" title="${rating} 星">
-      ${rating === 0 ? '0' : '★'}
-    </button>
-  `).join('');
+  renderReviewControls(asset);
 
   const analysis = asset.analysis || {};
   const flags = analysis.flags || [];
@@ -708,6 +984,48 @@ function renderReview() {
   `;
 }
 
+function renderReviewControls(asset) {
+  document.querySelectorAll('[data-review-status]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.reviewStatus === asset.status);
+  });
+  els.ratingRow.innerHTML = Array.from({ length: 6 }, (_, rating) => `
+    <button class="rating-button ${asset.rating === rating ? 'active' : ''}" data-rating="${rating}" type="button" title="${rating} 星">
+      ${rating === 0 ? '0' : '★'}
+    </button>
+  `).join('');
+}
+
+function renderVideoReview(asset) {
+  const video = asset.video || {};
+  const duration = Number(video.duration || els.reviewVideo.duration || 0);
+  const trimStart = Math.max(0, Number(video.trimStart || 0));
+  const trimEnd = video.trimEnd == null ? duration : Math.max(trimStart, Number(video.trimEnd));
+  const hasRange = duration > 0;
+  const selectedDuration = hasRange ? Math.max(0, trimEnd - trimStart) : 0;
+  els.reviewFileMeta.textContent = `${asset.ext.replace('.', '').toUpperCase()} · ${formatBytes(asset.size)}${duration ? ` · ${formatDuration(duration)}` : ''}`;
+  els.videoDurationLabel.textContent = duration ? `原片 ${formatDuration(duration)}` : '正在读取时长';
+  els.videoTrimStart.textContent = formatDuration(trimStart);
+  els.videoTrimEnd.textContent = video.trimEnd == null ? '片尾' : formatDuration(trimEnd);
+  els.videoClipCopy.textContent = hasRange
+    ? (video.trimEnd != null || trimStart > 0
+        ? `当前标记会保留 ${formatDuration(selectedDuration)} 的候选片段。`
+        : '播放到合适位置后，将当前时间设为入点或出点。')
+    : '视频时长读取后，即可标记适合放进 Vlog 的片段。';
+  const left = hasRange ? Math.min(100, (trimStart / duration) * 100) : 0;
+  const width = hasRange ? Math.max(0, Math.min(100 - left, ((trimEnd - trimStart) / duration) * 100)) : 0;
+  els.clipRangeVisual.innerHTML = `<i style="left:${left}%;width:${width}%"></i>`;
+  const orientation = videoOrientation(asset);
+  els.fileDetails.innerHTML = `
+    <dt>修改时间</dt><dd>${formatDate(asset.modifiedAt)}</dd>
+    <dt>文件大小</dt><dd>${formatBytes(asset.size)}</dd>
+    <dt>视频时长</dt><dd>${duration ? formatDuration(duration) : '正在读取'}</dd>
+    <dt>画面尺寸</dt><dd>${video.width && video.height ? `${video.width} × ${video.height}` : '正在读取'}</dd>
+    <dt>画幅方向</dt><dd>${orientation === 'portrait' ? '竖屏' : orientation === 'landscape' ? '横屏' : '正在读取'}</dd>
+    <dt>片段范围</dt><dd>${hasRange ? `${formatDuration(trimStart)} ～ ${video.trimEnd == null ? '片尾' : formatDuration(trimEnd)}` : '尚未标记'}</dd>
+    <dt>原始位置</dt><dd>${escapeHtml(asset.path)}</dd>
+  `;
+}
+
 function navigateReview(direction) {
   const index = filteredAssets.findIndex((asset) => asset.id === reviewAssetId);
   const nextIndex = index + direction;
@@ -720,7 +1038,7 @@ function openImportDialog() {
   selectedSource = null;
   nameWasEdited = false;
   els.projectNameInput.value = '';
-  els.folderPickerTitle.textContent = '选择照片素材文件夹';
+  els.folderPickerTitle.textContent = '选择照片和视频素材文件夹';
   els.folderPickerPath.textContent = '支持包含多个相机子文件夹';
   els.createProjectButton.disabled = true;
   els.createProjectButton.textContent = '开始导入';
@@ -752,7 +1070,7 @@ async function createProject() {
   if (!selectedSource || els.createProjectButton.disabled) return;
   const name = els.projectNameInput.value.trim() || selectedSource.suggestedName;
   els.createProjectButton.disabled = true;
-  els.createProjectButton.textContent = '正在扫描照片…';
+  els.createProjectButton.textContent = '正在扫描素材…';
   els.chooseFolderButton.disabled = true;
 
   try {
@@ -762,12 +1080,15 @@ async function createProject() {
     activeFilter = 'all';
     activeFeatureFilter = 'all';
     activeColorFilter = 'all';
+    activeVideoFeatureFilter = 'all';
+    activeWorkspace = assetsForWorkspace(activeProject(), 'photo').length ? 'photo' : 'video';
     searchQuery = '';
     els.featureFilter.value = 'all';
+    els.videoFeatureFilter.value = 'all';
     visibleLimit = 160;
     renderAll();
     const warnings = result.warnings?.length || 0;
-    showToast(warnings ? `导入完成，另有 ${warnings} 个文件或目录无法读取` : '导入完成，本地视觉理解正在后台进行');
+    showToast(warnings ? `导入完成，另有 ${warnings} 个文件或目录无法读取` : '导入完成，照片理解与视频信息读取正在进行');
   } catch (error) {
     showToast(error.message || '导入失败', 'error', 5000);
   } finally {
@@ -800,24 +1121,47 @@ async function rescanProject() {
 async function exportPicks() {
   const project = activeProject();
   if (!project) return;
-  const pickCount = project.assets.filter((asset) => asset.status === 'pick').length;
+  const kindLabel = isVideoWorkspace() ? '视频' : '照片';
+  const pickCount = assetsForWorkspace(project).filter((asset) => asset.status === 'pick').length;
   if (!pickCount) {
-    showToast('先把喜欢的照片标记为“保留”，再进行导出', 'error');
+    showToast(`先把喜欢的${kindLabel}标记为“保留”，再进行导出`, 'error');
     return;
   }
 
   els.exportButton.disabled = true;
   els.exportButton.textContent = '选择导出位置…';
   try {
-    const result = await api.exportPicks(project.id);
+    const result = await api.exportPicks({ projectId: project.id, kind: activeWorkspace });
     if (result.canceled) return;
-    showToast(`已安全复制 ${result.copied} 张照片到：${result.outputDirectory}`, 'normal', 7000);
+    showToast(`已安全复制 ${result.copied} ${isVideoWorkspace() ? '段视频' : '张照片'}到：${result.outputDirectory}`, 'normal', 7000);
   } catch (error) {
     showToast(error.message || '导出失败', 'error', 5000);
   } finally {
     els.exportButton.disabled = false;
     renderSummary(project);
   }
+}
+
+function setVideoMarker(marker) {
+  const project = activeProject();
+  const asset = project?.assets.find((item) => item.id === reviewAssetId);
+  if (!asset || assetKind(asset) !== 'video') return;
+  const duration = Number(asset.video?.duration || els.reviewVideo.duration || 0);
+  if (!duration || !Number.isFinite(els.reviewVideo.currentTime)) {
+    showToast('视频正在读取，稍后再标记片段', 'error');
+    return;
+  }
+  const currentTime = Math.max(0, Math.min(duration, els.reviewVideo.currentTime));
+  const next = { ...(asset.video || {}), duration };
+  if (marker === 'in') {
+    next.trimStart = Math.min(currentTime, Math.max(0, Number(next.trimEnd ?? duration) - 0.1));
+  } else if (marker === 'out') {
+    next.trimEnd = Math.max(currentTime, Math.min(duration, Number(next.trimStart || 0) + 0.1));
+  } else {
+    next.trimStart = 0;
+    next.trimEnd = null;
+  }
+  updateAsset(asset.id, { video: next });
 }
 
 document.querySelector('#import-trigger').addEventListener('click', openImportDialog);
@@ -836,6 +1180,11 @@ document.querySelectorAll('[data-close-import]').forEach((button) => {
 els.projectList.addEventListener('click', (event) => {
   const button = event.target.closest('[data-project-id]');
   if (button) selectProject(button.dataset.projectId);
+});
+
+els.workspaceSwitch.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-workspace]');
+  if (button) setWorkspace(button.dataset.workspace);
 });
 
 document.querySelector('#status-filters').addEventListener('click', (event) => {
@@ -877,6 +1226,12 @@ els.featureFilter.addEventListener('change', (event) => {
   renderActiveProject();
 });
 
+els.videoFeatureFilter.addEventListener('change', (event) => {
+  activeVideoFeatureFilter = event.target.value;
+  visibleLimit = 160;
+  renderActiveProject();
+});
+
 els.colorFilterOptions.addEventListener('click', (event) => {
   const button = event.target.closest('[data-color-filter]');
   if (button) setColorFilter(button.dataset.colorFilter);
@@ -899,7 +1254,7 @@ els.restartAnalysisButton.addEventListener('click', async () => {
   activeFeatureFilter = 'all';
   activeColorFilter = 'all';
   els.featureFilter.value = 'all';
-  for (const asset of project.assets) {
+  for (const asset of assetsForWorkspace(project, 'photo')) {
     asset.analysis = { version: ANALYSIS_VERSION, state: 'pending', score: null, flags: [] };
   }
   renderAll();
@@ -926,6 +1281,8 @@ document.querySelector('#remove-project-button').addEventListener('click', async
     activeFilter = 'all';
     activeFeatureFilter = 'all';
     activeColorFilter = 'all';
+    activeVideoFeatureFilter = 'all';
+    activeWorkspace = 'photo';
     searchQuery = '';
     renderAll();
     showToast('项目记录已移除，原始照片未受影响');
@@ -940,6 +1297,9 @@ els.nextPhoto.addEventListener('click', () => navigateReview(1));
 document.querySelector('#reveal-asset').addEventListener('click', () => {
   if (reviewAssetId) api.revealAsset(reviewAssetId);
 });
+els.setVideoIn.addEventListener('click', () => setVideoMarker('in'));
+els.setVideoOut.addEventListener('click', () => setVideoMarker('out'));
+els.clearVideoTrim.addEventListener('click', () => setVideoMarker('clear'));
 
 els.zoomOut.addEventListener('click', () => setReviewZoom(reviewZoom / 1.25));
 els.zoomIn.addEventListener('click', () => setReviewZoom(reviewZoom * 1.25));
@@ -949,17 +1309,18 @@ els.zoomSlider.addEventListener('input', (event) => {
 });
 
 els.reviewImageWrap.addEventListener('wheel', (event) => {
-  if (els.reviewOverlay.hidden) return;
+  if (els.reviewOverlay.hidden || els.reviewOverlay.classList.contains('video-review')) return;
   event.preventDefault();
   setReviewZoom(reviewZoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12));
 }, { passive: false });
 
 els.reviewImageWrap.addEventListener('dblclick', () => {
+  if (els.reviewOverlay.classList.contains('video-review')) return;
   setReviewZoom(reviewZoom > 1.01 ? 1 : 2);
 });
 
 els.reviewImageWrap.addEventListener('pointerdown', (event) => {
-  if (reviewZoom <= 1.001 || event.button !== 0) return;
+  if (els.reviewOverlay.classList.contains('video-review') || reviewZoom <= 1.001 || event.button !== 0) return;
   panning = true;
   panOrigin = {
     pointerX: event.clientX,
@@ -992,7 +1353,7 @@ els.reviewImageWrap.addEventListener('pointerup', stopPanning);
 els.reviewImageWrap.addEventListener('pointercancel', stopPanning);
 
 window.addEventListener('resize', () => {
-  if (!els.reviewOverlay.hidden) calculateReviewFit();
+  if (!els.reviewOverlay.hidden && !els.reviewOverlay.classList.contains('video-review')) calculateReviewFit();
 });
 
 document.querySelectorAll('[data-review-status]').forEach((button) => {
@@ -1023,15 +1384,15 @@ document.addEventListener('keydown', (event) => {
   else if (event.key.toLowerCase() === 'p') updateAsset(reviewAssetId, { status: 'pick' });
   else if (event.key.toLowerCase() === 'u') updateAsset(reviewAssetId, { status: 'maybe' });
   else if (event.key.toLowerCase() === 'x') updateAsset(reviewAssetId, { status: 'reject' });
-  else if (event.key === '+' || event.key === '=') setReviewZoom(reviewZoom * 1.25);
-  else if (event.key === '-' || event.key === '_') setReviewZoom(reviewZoom / 1.25);
-  else if (event.key.toLowerCase() === 'f') calculateReviewFit();
+  else if (!els.reviewOverlay.classList.contains('video-review') && (event.key === '+' || event.key === '=')) setReviewZoom(reviewZoom * 1.25);
+  else if (!els.reviewOverlay.classList.contains('video-review') && (event.key === '-' || event.key === '_')) setReviewZoom(reviewZoom / 1.25);
+  else if (!els.reviewOverlay.classList.contains('video-review') && event.key.toLowerCase() === 'f') calculateReviewFit();
   else if (/^[0-5]$/.test(event.key)) updateAsset(reviewAssetId, { rating: Number(event.key) });
 });
 
 api.onScanProgress(({ scanned }) => {
-  if (!els.importModal.hidden) els.createProjectButton.textContent = `已找到 ${scanned} 张…`;
-  if (els.rescanButton.disabled) els.rescanButton.textContent = `已找到 ${scanned} 张…`;
+  if (!els.importModal.hidden) els.createProjectButton.textContent = `已找到 ${scanned} 项素材…`;
+  if (els.rescanButton.disabled) els.rescanButton.textContent = `已找到 ${scanned} 项素材…`;
 });
 
 api.onAnalysisProgress((progress) => {
@@ -1060,6 +1421,10 @@ async function boot() {
     const smokeColorFilter = smokeParams.get('smokeColorFilter');
     if (smokeColorFilter && COLOR_FILTER_LABELS[smokeColorFilter]) {
       setColorFilter(smokeColorFilter);
+    }
+    const smokeWorkspace = smokeParams.get('smokeWorkspace');
+    if (smokeWorkspace === 'photo' || smokeWorkspace === 'video') {
+      setWorkspace(smokeWorkspace);
     }
     if (smokeParams.get('smokeReview') === '1') {
       const preferredName = smokeParams.get('smokeReviewFile');
