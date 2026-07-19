@@ -8,6 +8,7 @@ function subscribe(channel, callback) {
 
 contextBridge.exposeInMainWorld('photoStudio', {
   getState: () => ipcRenderer.invoke('app:get-state'),
+  setUiScale: (value) => ipcRenderer.invoke('app:set-ui-scale', value),
   chooseSource: () => ipcRenderer.invoke('dialog:choose-source'),
   createProject: (input) => ipcRenderer.invoke('project:create', input),
   setActiveProject: (projectId) => ipcRenderer.invoke('project:set-active', projectId),

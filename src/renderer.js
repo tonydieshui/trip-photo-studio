@@ -40,6 +40,9 @@ const els = {
   projectView: document.querySelector('#project-view'),
   projectList: document.querySelector('#project-list'),
   projectCount: document.querySelector('#project-count'),
+  uiScaleDecrease: document.querySelector('#ui-scale-decrease'),
+  uiScaleValue: document.querySelector('#ui-scale-value'),
+  uiScaleIncrease: document.querySelector('#ui-scale-increase'),
   projectTitle: document.querySelector('#project-title'),
   projectPath: document.querySelector('#project-path'),
   analysisStatus: document.querySelector('#analysis-status'),
@@ -122,6 +125,7 @@ const els = {
 };
 
 let libraryState = { version: 1, activeProjectId: null, projects: [] };
+let uiScale = 1;
 let activeFilter = 'all';
 let searchQuery = '';
 let sortMode = 'newest';
@@ -150,6 +154,7 @@ let reviewBaseHeight = 1;
 let panning = false;
 let panOrigin = null;
 const analysisProgress = new Map();
+const UI_SCALE_STEPS = [0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5];
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -162,6 +167,41 @@ function escapeHtml(value) {
 
 function activeProject() {
   return libraryState.projects.find((project) => project.id === libraryState.activeProjectId) || null;
+}
+
+function normalizeUiScale(value) {
+  const scale = Number(value);
+  if (!Number.isFinite(scale)) return 1;
+  return Math.round(Math.min(1.5, Math.max(0.8, scale)) * 100) / 100;
+}
+
+function renderUiScale() {
+  const percentage = Math.round(uiScale * 100);
+  els.uiScaleValue.textContent = `${percentage}%`;
+  els.uiScaleDecrease.disabled = uiScale <= UI_SCALE_STEPS[0];
+  els.uiScaleIncrease.disabled = uiScale >= UI_SCALE_STEPS[UI_SCALE_STEPS.length - 1];
+}
+
+async function setUiScale(nextScale) {
+  const previous = uiScale;
+  uiScale = normalizeUiScale(nextScale);
+  renderUiScale();
+  try {
+    uiScale = await api.setUiScale(uiScale);
+    renderUiScale();
+  } catch (error) {
+    uiScale = previous;
+    renderUiScale();
+    showToast(error.message || '无法保存界面比例', 'error');
+  }
+}
+
+function shiftUiScale(direction) {
+  const nearestIndex = UI_SCALE_STEPS.reduce((best, value, index) => (
+    Math.abs(value - uiScale) < Math.abs(UI_SCALE_STEPS[best] - uiScale) ? index : best
+  ), 0);
+  const nextIndex = Math.max(0, Math.min(UI_SCALE_STEPS.length - 1, nearestIndex + direction));
+  setUiScale(UI_SCALE_STEPS[nextIndex]);
 }
 
 function assetKind(asset) {
@@ -1595,6 +1635,9 @@ function selectVideoClip(clipId) {
 
 document.querySelector('#import-trigger').addEventListener('click', openImportDialog);
 document.querySelector('#welcome-import').addEventListener('click', openImportDialog);
+els.uiScaleDecrease.addEventListener('click', () => shiftUiScale(-1));
+els.uiScaleIncrease.addEventListener('click', () => shiftUiScale(1));
+els.uiScaleValue.addEventListener('click', () => setUiScale(1));
 els.chooseFolderButton.addEventListener('click', chooseSourceFolder);
 els.createProjectButton.addEventListener('click', createProject);
 els.projectNameInput.addEventListener('input', () => {
@@ -1921,6 +1964,8 @@ api.onExportProgress(({ projectId, copied, total }) => {
 async function boot() {
   try {
     libraryState = await api.getState();
+    uiScale = normalizeUiScale(libraryState.settings?.uiScale);
+    renderUiScale();
     renderAll();
     const smokeParams = new URLSearchParams(window.location.search);
     const smokeColorFilter = smokeParams.get('smokeColorFilter');

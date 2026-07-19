@@ -28,6 +28,8 @@ const { ANALYSIS_VERSION, analyzeBitmap } = require('./photo-analysis');
 const APP_NAME = '旅图整理台';
 const STATE_VERSION = 1;
 const THUMB_SIZE = 720;
+const UI_SCALE_MIN = 0.8;
+const UI_SCALE_MAX = 1.5;
 const SMOKE_TEST = process.env.TRIP_PHOTO_SMOKE_TEST === '1';
 const SMOKE_SCREENSHOT = process.env.TRIP_PHOTO_SCREENSHOT_PATH || '';
 const SMOKE_SOURCE = process.env.TRIP_PHOTO_SMOKE_SOURCE || '';
@@ -36,6 +38,7 @@ const SMOKE_REVIEW_FILE = process.env.TRIP_PHOTO_SMOKE_REVIEW_FILE || '';
 const SMOKE_COLOR_FILTER = process.env.TRIP_PHOTO_SMOKE_COLOR_FILTER || '';
 const SMOKE_WORKSPACE = process.env.TRIP_PHOTO_SMOKE_WORKSPACE || '';
 const SMOKE_VLOG = process.env.TRIP_PHOTO_SMOKE_VLOG === '1';
+const SMOKE_UI_SCALE = process.env.TRIP_PHOTO_SMOKE_UI_SCALE || '';
 const CUSTOM_USER_DATA = process.env.TRIP_PHOTO_USER_DATA || '';
 
 if (CUSTOM_USER_DATA) {
@@ -71,9 +74,16 @@ const analyzingProjects = new Set();
 function createEmptyState() {
   return {
     version: STATE_VERSION,
+    settings: { uiScale: 1 },
     activeProjectId: null,
     projects: []
   };
+}
+
+function normalizeUiScale(value) {
+  const scale = Number(value);
+  if (!Number.isFinite(scale)) return 1;
+  return Math.round(Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, scale)) * 100) / 100;
 }
 
 function normalizeVideoData(value = {}) {
@@ -175,7 +185,12 @@ function normalizeLoadedState(value) {
     ? value.activeProjectId
     : projects[0]?.id || null;
 
-  return { version: STATE_VERSION, activeProjectId, projects };
+  return {
+    version: STATE_VERSION,
+    settings: { uiScale: normalizeUiScale(value?.settings?.uiScale) },
+    activeProjectId,
+    projects
+  };
 }
 
 async function loadState() {
@@ -568,6 +583,14 @@ async function uniqueDestinationPath(directory, fileName) {
 function registerIpcHandlers() {
   ipcMain.handle('app:get-state', () => libraryState);
 
+  ipcMain.handle('app:set-ui-scale', async (_event, value) => {
+    const uiScale = normalizeUiScale(value);
+    libraryState.settings = { ...(libraryState.settings || {}), uiScale };
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.setZoomFactor(uiScale);
+    await queueStateSave();
+    return uiScale;
+  });
+
   ipcMain.handle('dialog:choose-source', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: '选择照片和视频素材文件夹',
@@ -813,6 +836,7 @@ function createWindow() {
       sandbox: true
     }
   });
+  mainWindow.webContents.setZoomFactor(normalizeUiScale(libraryState.settings?.uiScale));
 
   const smokeQuery = {};
   if (SMOKE_REVIEW) {
@@ -855,6 +879,9 @@ app.whenReady().then(async () => {
   await fsp.mkdir(path.dirname(stateFile), { recursive: true });
   await fsp.mkdir(thumbnailDirectory, { recursive: true });
   await loadState();
+  if (SMOKE_TEST && SMOKE_UI_SCALE) {
+    libraryState.settings = { ...(libraryState.settings || {}), uiScale: normalizeUiScale(SMOKE_UI_SCALE) };
+  }
 
   let smokeProjectId = null;
   if (SMOKE_TEST && SMOKE_SOURCE) {
@@ -878,6 +905,7 @@ app.whenReady().then(async () => {
     smokeProjectId = crypto.randomUUID();
     libraryState = {
       version: STATE_VERSION,
+      settings: { uiScale: normalizeUiScale(SMOKE_UI_SCALE || 1) },
       activeProjectId: smokeProjectId,
       projects: [{
         id: smokeProjectId,
