@@ -76,6 +76,26 @@ const els = {
   createProjectButton: document.querySelector('#create-project-button'),
   exportButton: document.querySelector('#export-button'),
   rescanButton: document.querySelector('#rescan-button'),
+  compareTray: document.querySelector('#compare-tray'),
+  compareTrayCount: document.querySelector('#compare-tray-count'),
+  compareTraySlots: document.querySelector('#compare-tray-slots'),
+  clearCompare: document.querySelector('#clear-compare'),
+  openCompare: document.querySelector('#open-compare'),
+  compareOverlay: document.querySelector('#compare-overlay'),
+  compareStage: document.querySelector('#compare-stage'),
+  compareImageLeft: document.querySelector('#compare-image-left'),
+  compareImageRight: document.querySelector('#compare-image-right'),
+  compareNameLeft: document.querySelector('#compare-name-left'),
+  compareNameRight: document.querySelector('#compare-name-right'),
+  compareMetaLeft: document.querySelector('#compare-meta-left'),
+  compareMetaRight: document.querySelector('#compare-meta-right'),
+  compareZoomOut: document.querySelector('#compare-zoom-out'),
+  compareZoomIn: document.querySelector('#compare-zoom-in'),
+  compareZoomFit: document.querySelector('#compare-zoom-fit'),
+  compareZoomSlider: document.querySelector('#compare-zoom-slider'),
+  compareZoomLevel: document.querySelector('#compare-zoom-level'),
+  swapCompare: document.querySelector('#swap-compare'),
+  toggleReviewCompare: document.querySelector('#toggle-review-compare'),
   reviewOverlay: document.querySelector('#review-overlay'),
   reviewImageWrap: document.querySelector('#review-image-wrap'),
   reviewImage: document.querySelector('#review-image'),
@@ -153,6 +173,12 @@ let reviewBaseWidth = 1;
 let reviewBaseHeight = 1;
 let panning = false;
 let panOrigin = null;
+let compareAssetIds = [];
+let compareZoom = 1;
+let comparePanX = 0;
+let comparePanY = 0;
+let comparePanning = false;
+let comparePanOrigin = null;
 const analysisProgress = new Map();
 const UI_SCALE_STEPS = [0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5];
 
@@ -900,8 +926,9 @@ function renderGallery(project) {
     const palette = asset.analysis?.palette?.slice(0, 5) || [];
     const styleTag = asset.analysis?.colorProfile?.labels?.[0]
       || asset.analysis?.styleTags?.find((tag) => !tag.includes('构图'));
+    const compareIndex = compareAssetIds.indexOf(asset.id);
     return `
-      <article class="photo-card status-${asset.status}" data-asset-id="${asset.id}">
+      <article class="photo-card status-${asset.status} ${compareIndex >= 0 ? 'compare-selected' : ''}" data-asset-id="${asset.id}">
         <button class="photo-open-button" data-open-asset="${asset.id}" type="button" aria-label="查看 ${escapeHtml(asset.name)}">
           <div class="photo-media">
             <img src="travel-photo://thumb/${asset.id}" loading="lazy" alt="${escapeHtml(asset.name)}" />
@@ -911,6 +938,7 @@ function renderGallery(project) {
             </div>
             ${flags.length ? `<span class="issue-badge">${escapeHtml(flags[0])}</span>` : ''}
             ${styleTag ? `<span class="style-badge">${escapeHtml(styleTag)}</span>` : ''}
+            ${compareIndex >= 0 ? `<span class="compare-card-badge">对比 ${compareIndex + 1}</span>` : ''}
             ${palette.length ? `<div class="card-palette">${palette.map((color) => `<i style="background:${safeColor(color.hex)}"></i>`).join('')}</div>` : ''}
           </div>
           <div class="photo-copy">
@@ -925,6 +953,7 @@ function renderGallery(project) {
           </div>
         </button>
         <div class="quick-actions" aria-label="快速筛选">
+          <button class="compare-quick-button ${compareIndex >= 0 ? 'active' : ''}" data-compare-asset="${asset.id}" type="button" title="${compareIndex >= 0 ? '移出对比' : '加入对比'}">对比</button>
           <button data-quick-status="pick" data-asset-id="${asset.id}" type="button" title="保留">✓</button>
           <button data-quick-status="maybe" data-asset-id="${asset.id}" type="button" title="待定">?</button>
           <button data-quick-status="reject" data-asset-id="${asset.id}" type="button" title="淘汰">×</button>
@@ -1020,11 +1049,182 @@ function wireVideoPreviews() {
   });
 }
 
+function selectedCompareAssets() {
+  const project = activeProject();
+  if (!project) return [];
+  return compareAssetIds
+    .map((assetId) => project.assets.find((asset) => asset.id === assetId && assetKind(asset) === 'photo'))
+    .filter(Boolean);
+}
+
+function compareAssetMeta(asset) {
+  const score = asset.analysis?.score;
+  const scoreText = score == null ? '等待分析' : `技术分 ${Math.round(score)}`;
+  const orientation = asset.analysis?.orientation;
+  const orientationText = orientation === 'portrait' ? '竖幅' : orientation === 'landscape' ? '横幅' : orientation === 'square' ? '近方形' : '';
+  return [
+    asset.ext.replace('.', '').toUpperCase(),
+    formatBytes(asset.size),
+    orientationText,
+    scoreText
+  ].filter(Boolean).join(' · ');
+}
+
+function compareSlotMarkup(asset, index) {
+  if (!asset) {
+    return `
+      <div class="compare-tray-slot empty">
+        <span>${index + 1}</span>
+        <small>再选一张照片</small>
+      </div>
+    `;
+  }
+  return `
+    <div class="compare-tray-slot">
+      <img src="travel-photo://thumb/${asset.id}" alt="" />
+      <span><b>${index === 0 ? 'A' : 'B'}</b><small>${escapeHtml(asset.name)}</small></span>
+      <button data-compare-remove="${asset.id}" type="button" title="移出对比" aria-label="将 ${escapeHtml(asset.name)} 移出对比">×</button>
+    </div>
+  `;
+}
+
+function renderCompareTray() {
+  const validAssets = selectedCompareAssets();
+  compareAssetIds = validAssets.map((asset) => asset.id);
+  const shouldShow = activeWorkspace === 'photo' && validAssets.length > 0;
+  els.compareTray.hidden = !shouldShow;
+  els.compareTrayCount.textContent = `已选择 ${validAssets.length} / 2`;
+  els.compareTraySlots.innerHTML = [0, 1]
+    .map((index) => compareSlotMarkup(validAssets[index], index))
+    .join('');
+  els.openCompare.disabled = validAssets.length !== 2;
+}
+
+function toggleCompareAsset(assetId) {
+  const project = activeProject();
+  const asset = project?.assets.find((item) => item.id === assetId);
+  if (!asset || assetKind(asset) !== 'photo') return;
+  const existingIndex = compareAssetIds.indexOf(assetId);
+  if (existingIndex >= 0) {
+    compareAssetIds.splice(existingIndex, 1);
+  } else if (compareAssetIds.length >= 2) {
+    showToast('一次最多对比两张照片，请先移除一张');
+    return;
+  } else {
+    compareAssetIds.push(assetId);
+  }
+  if (!els.compareOverlay.hidden && compareAssetIds.length !== 2) closeCompare();
+  renderGallery(project);
+  renderCompareTray();
+  if (!els.reviewOverlay.hidden && reviewAssetId === assetId) updateReviewCompareButton(asset);
+}
+
+function updateReviewCompareButton(asset) {
+  const selected = compareAssetIds.includes(asset?.id);
+  els.toggleReviewCompare.classList.toggle('active', selected);
+  els.toggleReviewCompare.textContent = selected ? '✓ 已加入对比' : '◫ 加入对比';
+}
+
+function setCompareImage(image, asset) {
+  const originalUrl = `travel-photo://original/${asset.id}`;
+  const thumbnailUrl = `travel-photo://thumb/${asset.id}`;
+  image.onerror = () => {
+    if (image.dataset.fallback !== '1') {
+      image.dataset.fallback = '1';
+      image.src = thumbnailUrl;
+    }
+  };
+  image.dataset.fallback = '0';
+  image.src = originalUrl;
+}
+
+function renderCompareOverlay() {
+  const assets = selectedCompareAssets();
+  if (assets.length !== 2) {
+    closeCompare();
+    return;
+  }
+  const [left, right] = assets;
+  setCompareImage(els.compareImageLeft, left);
+  setCompareImage(els.compareImageRight, right);
+  els.compareNameLeft.textContent = left.name;
+  els.compareNameRight.textContent = right.name;
+  els.compareMetaLeft.textContent = compareAssetMeta(left);
+  els.compareMetaRight.textContent = compareAssetMeta(right);
+  applyCompareTransform();
+}
+
+function openCompare() {
+  if (selectedCompareAssets().length !== 2) {
+    showToast('请先选择两张照片再开始对比');
+    return;
+  }
+  closeReview();
+  compareZoom = 1;
+  comparePanX = 0;
+  comparePanY = 0;
+  els.compareOverlay.hidden = false;
+  renderCompareOverlay();
+}
+
+function closeCompare() {
+  comparePanning = false;
+  comparePanOrigin = null;
+  els.compareStage.classList.remove('can-pan', 'panning');
+  els.compareOverlay.hidden = true;
+  els.compareImageLeft.removeAttribute('src');
+  els.compareImageRight.removeAttribute('src');
+}
+
+function clearCompare() {
+  closeCompare();
+  compareAssetIds = [];
+  const project = activeProject();
+  if (project && activeWorkspace === 'photo') renderGallery(project);
+  renderCompareTray();
+}
+
+function swapCompareAssets() {
+  if (compareAssetIds.length !== 2) return;
+  compareAssetIds.reverse();
+  const project = activeProject();
+  if (project) renderGallery(project);
+  renderCompareTray();
+  renderCompareOverlay();
+}
+
+function applyCompareTransform() {
+  const transform = `translate(${comparePanX}px, ${comparePanY}px) scale(${compareZoom})`;
+  els.compareImageLeft.style.transform = transform;
+  els.compareImageRight.style.transform = transform;
+  const percentage = Math.round(compareZoom * 100);
+  els.compareZoomSlider.value = String(Math.max(100, Math.min(500, percentage)));
+  els.compareZoomLevel.textContent = `${percentage}%`;
+  els.compareStage.classList.toggle('can-pan', compareZoom > 1.001);
+}
+
+function setCompareZoom(nextZoom) {
+  compareZoom = Math.max(1, Math.min(5, Number(nextZoom) || 1));
+  if (compareZoom <= 1.001) {
+    comparePanX = 0;
+    comparePanY = 0;
+  }
+  applyCompareTransform();
+}
+
+function resetCompareView() {
+  compareZoom = 1;
+  comparePanX = 0;
+  comparePanY = 0;
+  applyCompareTransform();
+}
+
 function renderActiveProject() {
   const project = activeProject();
   if (!project) {
     els.welcomeView.hidden = false;
     els.projectView.hidden = true;
+    renderCompareTray();
     return;
   }
 
@@ -1047,6 +1247,7 @@ function renderActiveProject() {
   updateFilterButtons();
   renderColorFilters(project);
   renderGallery(project);
+  renderCompareTray();
 }
 
 function renderMediaWorkspace(project) {
@@ -1089,6 +1290,8 @@ async function selectProject(projectId) {
   activeFeatureFilter = 'all';
   activeColorFilter = 'all';
   activeVideoFeatureFilter = 'all';
+  compareAssetIds = [];
+  closeCompare();
   activeWorkspace = assetsForWorkspace(activeProject(), 'photo').length ? 'photo' : 'video';
   searchQuery = '';
   els.searchInput.value = '';
@@ -1107,6 +1310,7 @@ function setWorkspace(workspace) {
     return;
   }
   closeReview();
+  closeCompare();
   activeWorkspace = workspace;
   activeFilter = 'all';
   activeFeatureFilter = 'all';
@@ -1278,6 +1482,7 @@ function renderReview() {
   els.reviewOverlay.classList.toggle('video-review', isVideo);
   els.reviewImage.hidden = isVideo;
   els.reviewVideo.hidden = !isVideo;
+  updateReviewCompareButton(isVideo ? null : asset);
   if (isVideo) {
     els.reviewImageWrap.classList.remove('can-pan', 'panning');
     if (loadedReviewAssetId !== asset.id) {
@@ -1670,6 +1875,12 @@ document.querySelector('.summary-strip').addEventListener('click', (event) => {
 });
 
 els.gallery.addEventListener('click', (event) => {
+  const compareButton = event.target.closest('[data-compare-asset]');
+  if (compareButton) {
+    event.preventDefault();
+    toggleCompareAsset(compareButton.dataset.compareAsset);
+    return;
+  }
   const quickButton = event.target.closest('[data-quick-status]');
   if (quickButton) {
     event.preventDefault();
@@ -1721,6 +1932,17 @@ document.querySelector('#rescan-button').addEventListener('click', rescanProject
 document.querySelector('#export-button').addEventListener('click', exportPicks);
 els.openVlogStudio.addEventListener('click', openVlogStudio);
 document.querySelector('#close-vlog-studio').addEventListener('click', closeVlogStudio);
+els.compareTray.addEventListener('click', (event) => {
+  const removeButton = event.target.closest('[data-compare-remove]');
+  if (removeButton) toggleCompareAsset(removeButton.dataset.compareRemove);
+});
+els.openCompare.addEventListener('click', openCompare);
+els.clearCompare.addEventListener('click', clearCompare);
+document.querySelector('#close-compare').addEventListener('click', closeCompare);
+els.swapCompare.addEventListener('click', swapCompareAssets);
+els.toggleReviewCompare.addEventListener('click', () => {
+  if (reviewAssetId) toggleCompareAsset(reviewAssetId);
+});
 els.syncVlogClips.addEventListener('click', syncVlogClips);
 els.playVlogSequence.addEventListener('click', playVlogSequence);
 els.stopVlogSequence.addEventListener('click', stopVlogSequence);
@@ -1810,6 +2032,8 @@ document.querySelector('#remove-project-button').addEventListener('click', async
     activeColorFilter = 'all';
     activeVideoFeatureFilter = 'all';
     activeWorkspace = 'photo';
+    compareAssetIds = [];
+    closeCompare();
     searchQuery = '';
     renderAll();
     showToast('项目记录已移除，原始照片未受影响');
@@ -1851,6 +2075,61 @@ els.zoomFit.addEventListener('click', calculateReviewFit);
 els.zoomSlider.addEventListener('input', (event) => {
   setReviewZoom(Number(event.target.value) / 100);
 });
+
+els.compareZoomOut.addEventListener('click', () => setCompareZoom(compareZoom / 1.25));
+els.compareZoomIn.addEventListener('click', () => setCompareZoom(compareZoom * 1.25));
+els.compareZoomFit.addEventListener('click', resetCompareView);
+els.compareZoomSlider.addEventListener('input', (event) => {
+  setCompareZoom(Number(event.target.value) / 100);
+});
+
+els.compareStage.addEventListener('wheel', (event) => {
+  if (els.compareOverlay.hidden) return;
+  event.preventDefault();
+  setCompareZoom(compareZoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12));
+}, { passive: false });
+
+els.compareStage.addEventListener('dblclick', (event) => {
+  if (!event.target.closest('.compare-photo-frame')) return;
+  setCompareZoom(compareZoom > 1.01 ? 1 : 2);
+});
+
+els.compareStage.addEventListener('pointerdown', (event) => {
+  if (
+    compareZoom <= 1.001
+    || event.button !== 0
+    || !event.target.closest('.compare-photo-frame')
+  ) return;
+  comparePanning = true;
+  comparePanOrigin = {
+    pointerX: event.clientX,
+    pointerY: event.clientY,
+    panX: comparePanX,
+    panY: comparePanY
+  };
+  els.compareStage.classList.add('panning');
+  els.compareStage.setPointerCapture(event.pointerId);
+});
+
+els.compareStage.addEventListener('pointermove', (event) => {
+  if (!comparePanning || !comparePanOrigin) return;
+  comparePanX = comparePanOrigin.panX + event.clientX - comparePanOrigin.pointerX;
+  comparePanY = comparePanOrigin.panY + event.clientY - comparePanOrigin.pointerY;
+  applyCompareTransform();
+});
+
+function stopComparePanning(event) {
+  if (!comparePanning) return;
+  comparePanning = false;
+  comparePanOrigin = null;
+  els.compareStage.classList.remove('panning');
+  if (event?.pointerId != null && els.compareStage.hasPointerCapture(event.pointerId)) {
+    els.compareStage.releasePointerCapture(event.pointerId);
+  }
+}
+
+els.compareStage.addEventListener('pointerup', stopComparePanning);
+els.compareStage.addEventListener('pointercancel', stopComparePanning);
 
 els.reviewImageWrap.addEventListener('wheel', (event) => {
   if (els.reviewOverlay.hidden || els.reviewOverlay.classList.contains('video-review')) return;
@@ -1912,6 +2191,13 @@ els.ratingRow.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (!els.compareOverlay.hidden) {
+    if (event.key === 'Escape') closeCompare();
+    else if (event.key === '+' || event.key === '=') setCompareZoom(compareZoom * 1.25);
+    else if (event.key === '-' || event.key === '_') setCompareZoom(compareZoom / 1.25);
+    else if (event.key.toLowerCase() === 'f') resetCompareView();
+    return;
+  }
   if (!els.vlogOverlay.hidden) {
     if (event.key === 'Escape') closeVlogStudio();
     return;
@@ -1981,6 +2267,15 @@ async function boot() {
       const project = activeProject();
       const firstAsset = project?.assets?.find((asset) => asset.name === preferredName) || project?.assets?.[0];
       if (firstAsset) openReview(firstAsset.id);
+    }
+    if (smokeParams.get('smokeCompare') === '1') {
+      const photos = assetsForWorkspace(activeProject(), 'photo').slice(0, 2);
+      if (photos.length === 2) {
+        activeWorkspace = 'photo';
+        compareAssetIds = photos.map((asset) => asset.id);
+        renderActiveProject();
+        openCompare();
+      }
     }
     if (smokeParams.get('smokeVlog') === '1') openVlogStudio();
   } catch (error) {

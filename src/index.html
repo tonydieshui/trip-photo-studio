@@ -343,6 +343,7 @@
             <button class="fit-button" id="zoom-fit" type="button">显示完整</button>
           </div>
           <div class="review-header-actions">
+            <button class="ghost-button photo-review-only" id="toggle-review-compare" type="button">◫ 加入对比</button>
             <button class="ghost-button" id="reveal-asset" type="button">打开文件位置</button>
           </div>
         </header>
@@ -435,6 +436,64 @@
           <dl class="file-details" id="file-details"></dl>
         </section>
       </aside>
+    </div>
+
+    <section class="compare-tray" id="compare-tray" aria-label="照片对比篮" hidden>
+      <div class="compare-tray-heading">
+        <span class="compare-tray-icon">◫</span>
+        <span><strong>照片对比</strong><small id="compare-tray-count">已选择 0 / 2</small></span>
+      </div>
+      <div class="compare-tray-slots" id="compare-tray-slots"></div>
+      <div class="compare-tray-actions">
+        <button class="ghost-button compact" id="clear-compare" type="button">清空</button>
+        <button class="primary-button compact" id="open-compare" type="button" disabled>开始对比</button>
+      </div>
+    </section>
+
+    <div class="compare-overlay" id="compare-overlay" hidden>
+      <header class="compare-header">
+        <div class="compare-title-group">
+          <button class="round-button" id="close-compare" type="button" aria-label="退出照片对比">×</button>
+          <div>
+            <p class="eyebrow">PHOTO COMPARE</p>
+            <h2>并排照片对比</h2>
+          </div>
+        </div>
+        <div class="zoom-controls compare-zoom-controls" aria-label="同步缩放">
+          <button class="zoom-button" id="compare-zoom-out" type="button" title="同步缩小">−</button>
+          <input id="compare-zoom-slider" type="range" min="100" max="500" step="5" value="100" aria-label="同步缩放百分比" />
+          <span id="compare-zoom-level">100%</span>
+          <button class="zoom-button" id="compare-zoom-in" type="button" title="同步放大">＋</button>
+          <button class="fit-button" id="compare-zoom-fit" type="button">显示完整</button>
+        </div>
+        <button class="ghost-button compare-swap-button" id="swap-compare" type="button">⇄ 交换左右</button>
+      </header>
+
+      <main class="compare-stage" id="compare-stage">
+        <section class="compare-pane">
+          <div class="compare-photo-frame">
+            <span class="compare-side-label">A</span>
+            <img class="compare-image" id="compare-image-left" alt="左侧对比照片" draggable="false" />
+          </div>
+          <footer class="compare-caption">
+            <strong id="compare-name-left"></strong>
+            <span id="compare-meta-left"></span>
+          </footer>
+        </section>
+        <div class="compare-divider" aria-hidden="true"><span>VS</span></div>
+        <section class="compare-pane">
+          <div class="compare-photo-frame">
+            <span class="compare-side-label">B</span>
+            <img class="compare-image" id="compare-image-right" alt="右侧对比照片" draggable="false" />
+          </div>
+          <footer class="compare-caption">
+            <strong id="compare-name-right"></strong>
+            <span id="compare-meta-right"></span>
+          </footer>
+        </section>
+      </main>
+
+      <div class="compare-help">滚轮同步缩放 · 放大后拖动同步查看细节 · 双击切换 100% / 200% · Esc 退出</div>
     </div>
 
     <div class="vlog-overlay" id="vlog-overlay" hidden>

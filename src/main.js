@@ -38,6 +38,7 @@ const SMOKE_REVIEW_FILE = process.env.TRIP_PHOTO_SMOKE_REVIEW_FILE || '';
 const SMOKE_COLOR_FILTER = process.env.TRIP_PHOTO_SMOKE_COLOR_FILTER || '';
 const SMOKE_WORKSPACE = process.env.TRIP_PHOTO_SMOKE_WORKSPACE || '';
 const SMOKE_VLOG = process.env.TRIP_PHOTO_SMOKE_VLOG === '1';
+const SMOKE_COMPARE = process.env.TRIP_PHOTO_SMOKE_COMPARE === '1';
 const SMOKE_UI_SCALE = process.env.TRIP_PHOTO_SMOKE_UI_SCALE || '';
 const CUSTOM_USER_DATA = process.env.TRIP_PHOTO_USER_DATA || '';
 
@@ -846,6 +847,7 @@ function createWindow() {
   if (SMOKE_COLOR_FILTER) smokeQuery.smokeColorFilter = SMOKE_COLOR_FILTER;
   if (SMOKE_WORKSPACE) smokeQuery.smokeWorkspace = SMOKE_WORKSPACE;
   if (SMOKE_VLOG) smokeQuery.smokeVlog = '1';
+  if (SMOKE_COMPARE) smokeQuery.smokeCompare = '1';
   mainWindow.loadFile(
     path.join(__dirname, 'index.html'),
     Object.keys(smokeQuery).length ? { query: smokeQuery } : undefined
