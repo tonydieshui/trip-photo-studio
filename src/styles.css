@@ -1141,6 +1141,9 @@ select:focus-visible {
 
 .review-header-actions {
   justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .zoom-controls {
@@ -2957,6 +2960,19 @@ body {
   border-color: rgba(145, 99, 194, 0.28);
   background: linear-gradient(135deg, rgba(150, 104, 208, 0.13), rgba(223, 139, 183, 0.13));
   color: #765195;
+}
+
+.review-compare-open {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+.review-compare-open:disabled {
+  border-color: rgba(116, 86, 137, 0.13);
+  background: rgba(255, 255, 255, 0.52);
+  box-shadow: none;
+  color: #a394aa;
 }
 
 /* Vlog rough-cut studio */

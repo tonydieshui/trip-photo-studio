@@ -96,6 +96,7 @@ const els = {
   compareZoomLevel: document.querySelector('#compare-zoom-level'),
   swapCompare: document.querySelector('#swap-compare'),
   toggleReviewCompare: document.querySelector('#toggle-review-compare'),
+  openReviewCompare: document.querySelector('#open-review-compare'),
   reviewOverlay: document.querySelector('#review-overlay'),
   reviewImageWrap: document.querySelector('#review-image-wrap'),
   reviewImage: document.querySelector('#review-image'),
@@ -1121,8 +1122,11 @@ function toggleCompareAsset(assetId) {
 
 function updateReviewCompareButton(asset) {
   const selected = compareAssetIds.includes(asset?.id);
+  const compareCount = selectedCompareAssets().length;
   els.toggleReviewCompare.classList.toggle('active', selected);
   els.toggleReviewCompare.textContent = selected ? '✓ 已加入对比' : '◫ 加入对比';
+  els.openReviewCompare.disabled = compareCount !== 2;
+  els.openReviewCompare.textContent = compareCount === 2 ? '开始对比' : `对比篮 ${compareCount} / 2`;
 }
 
 function setCompareImage(image, asset) {
@@ -1943,6 +1947,7 @@ els.swapCompare.addEventListener('click', swapCompareAssets);
 els.toggleReviewCompare.addEventListener('click', () => {
   if (reviewAssetId) toggleCompareAsset(reviewAssetId);
 });
+els.openReviewCompare.addEventListener('click', openCompare);
 els.syncVlogClips.addEventListener('click', syncVlogClips);
 els.playVlogSequence.addEventListener('click', playVlogSequence);
 els.stopVlogSequence.addEventListener('click', stopVlogSequence);
