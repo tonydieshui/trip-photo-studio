@@ -97,6 +97,9 @@ const els = {
   swapCompare: document.querySelector('#swap-compare'),
   toggleReviewCompare: document.querySelector('#toggle-review-compare'),
   openReviewCompare: document.querySelector('#open-review-compare'),
+  reviewCompareCount: document.querySelector('#review-compare-count'),
+  reviewCompareSlots: document.querySelector('#review-compare-slots'),
+  clearReviewCompare: document.querySelector('#clear-review-compare'),
   reviewOverlay: document.querySelector('#review-overlay'),
   reviewImageWrap: document.querySelector('#review-image-wrap'),
   reviewImage: document.querySelector('#review-image'),
@@ -1117,16 +1120,26 @@ function toggleCompareAsset(assetId) {
   if (!els.compareOverlay.hidden && compareAssetIds.length !== 2) closeCompare();
   renderGallery(project);
   renderCompareTray();
-  if (!els.reviewOverlay.hidden && reviewAssetId === assetId) updateReviewCompareButton(asset);
+  if (!els.reviewOverlay.hidden) {
+    const reviewAsset = project.assets.find((item) => item.id === reviewAssetId);
+    updateReviewCompareButton(reviewAsset);
+  }
 }
 
 function updateReviewCompareButton(asset) {
+  const compareAssets = selectedCompareAssets();
   const selected = compareAssetIds.includes(asset?.id);
-  const compareCount = selectedCompareAssets().length;
+  const compareCount = compareAssets.length;
+  const isPhoto = Boolean(asset) && assetKind(asset) === 'photo';
   els.toggleReviewCompare.classList.toggle('active', selected);
-  els.toggleReviewCompare.textContent = selected ? '✓ 已加入对比' : '◫ 加入对比';
+  els.toggleReviewCompare.disabled = !isPhoto || (!selected && compareCount >= 2);
+  els.toggleReviewCompare.textContent = selected ? '移出当前照片' : '加入当前照片';
   els.openReviewCompare.disabled = compareCount !== 2;
-  els.openReviewCompare.textContent = compareCount === 2 ? '开始对比' : `对比篮 ${compareCount} / 2`;
+  els.reviewCompareCount.textContent = `${compareCount} / 2`;
+  els.reviewCompareSlots.innerHTML = [0, 1]
+    .map((index) => compareSlotMarkup(compareAssets[index], index))
+    .join('');
+  els.clearReviewCompare.disabled = compareCount === 0;
 }
 
 function setCompareImage(image, asset) {
@@ -1163,7 +1176,6 @@ function openCompare() {
     showToast('请先选择两张照片再开始对比');
     return;
   }
-  closeReview();
   compareZoom = 1;
   comparePanX = 0;
   comparePanY = 0;
@@ -1186,6 +1198,10 @@ function clearCompare() {
   const project = activeProject();
   if (project && activeWorkspace === 'photo') renderGallery(project);
   renderCompareTray();
+  if (!els.reviewOverlay.hidden) {
+    const reviewAsset = project?.assets.find((item) => item.id === reviewAssetId);
+    updateReviewCompareButton(reviewAsset);
+  }
 }
 
 function swapCompareAssets() {
@@ -1948,6 +1964,11 @@ els.toggleReviewCompare.addEventListener('click', () => {
   if (reviewAssetId) toggleCompareAsset(reviewAssetId);
 });
 els.openReviewCompare.addEventListener('click', openCompare);
+els.clearReviewCompare.addEventListener('click', clearCompare);
+els.reviewCompareSlots.addEventListener('click', (event) => {
+  const removeButton = event.target.closest('[data-compare-remove]');
+  if (removeButton) toggleCompareAsset(removeButton.dataset.compareRemove);
+});
 els.syncVlogClips.addEventListener('click', syncVlogClips);
 els.playVlogSequence.addEventListener('click', playVlogSequence);
 els.stopVlogSequence.addEventListener('click', stopVlogSequence);
@@ -2279,7 +2300,8 @@ async function boot() {
         activeWorkspace = 'photo';
         compareAssetIds = photos.map((asset) => asset.id);
         renderActiveProject();
-        openCompare();
+        if (smokeParams.get('smokeReview') === '1') renderReview();
+        else openCompare();
       }
     }
     if (smokeParams.get('smokeVlog') === '1') openVlogStudio();

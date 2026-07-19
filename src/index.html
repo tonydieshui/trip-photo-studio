@@ -343,8 +343,6 @@
             <button class="fit-button" id="zoom-fit" type="button">显示完整</button>
           </div>
           <div class="review-header-actions">
-            <button class="ghost-button photo-review-only" id="toggle-review-compare" type="button">◫ 加入对比</button>
-            <button class="primary-button compact photo-review-only review-compare-open" id="open-review-compare" type="button" disabled>对比篮 0 / 2</button>
             <button class="ghost-button" id="reveal-asset" type="button">打开文件位置</button>
           </div>
         </header>
@@ -374,6 +372,19 @@
           <h2 id="review-file-name"></h2>
           <p id="review-file-meta"></p>
         </div>
+
+        <section class="review-section review-compare-section photo-review-only">
+          <div class="section-title-row review-compare-heading">
+            <h3>照片对比篮</h3>
+            <span id="review-compare-count">0 / 2</span>
+          </div>
+          <div class="review-compare-slots" id="review-compare-slots"></div>
+          <div class="review-compare-actions">
+            <button class="ghost-button" id="toggle-review-compare" type="button">加入当前照片</button>
+            <button class="primary-button review-compare-open" id="open-review-compare" type="button" disabled>开始对比</button>
+          </div>
+          <button class="review-compare-clear" id="clear-review-compare" type="button" disabled>清空对比篮</button>
+        </section>
 
         <section class="review-section">
           <h3>筛选决定</h3>

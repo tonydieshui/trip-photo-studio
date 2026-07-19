@@ -2962,10 +2962,62 @@ body {
   color: #765195;
 }
 
+.review-compare-section {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid rgba(119, 79, 151, 0.14);
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.64), rgba(245, 233, 247, 0.5));
+  box-shadow: 0 12px 28px rgba(83, 53, 103, 0.08), inset 0 1px rgba(255, 255, 255, 0.8);
+}
+
+.review-compare-heading {
+  margin-bottom: 9px;
+}
+
+.review-compare-heading h3 {
+  margin-bottom: 0;
+}
+
+.review-compare-heading span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(149, 103, 203, 0.1);
+  color: #805c9d;
+  font-weight: 700;
+}
+
+.review-compare-slots {
+  display: grid;
+  gap: 7px;
+}
+
+.review-compare-slots .compare-tray-slot {
+  height: 50px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.review-compare-slots .compare-tray-slot img {
+  height: 38px;
+}
+
+.review-compare-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.review-compare-actions button {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 9px;
+}
+
 .review-compare-open {
-  min-height: 30px;
-  padding: 0 10px;
-  font-size: 10px;
+  min-height: 32px;
 }
 
 .review-compare-open:disabled {
@@ -2973,6 +3025,26 @@ body {
   background: rgba(255, 255, 255, 0.52);
   box-shadow: none;
   color: #a394aa;
+}
+
+.review-compare-clear {
+  display: block;
+  margin: 8px auto 0;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: #a08fa8;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.review-compare-clear:hover:not(:disabled) {
+  color: #bd628c;
+}
+
+.review-compare-clear:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 /* Vlog rough-cut studio */
